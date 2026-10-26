@@ -5,3 +5,4 @@
 //! and, later, by the Tauri app.
 
 pub mod floppy;
+pub mod settings;
