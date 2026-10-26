@@ -1,0 +1,23 @@
+[package]
+name = "floppy-station"
+version = "0.1.0"
+edition = "2024"
+description = "Turn floppy disks into physical game cartridges for Windows PCs"
+license = "MIT"
+authors = ["Marcos Galvao"]
+
+[lib]
+name = "floppy_station"
+path = "src/lib.rs"
+
+[[bin]]
+name = "floppy-station"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
