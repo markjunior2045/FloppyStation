@@ -5,19 +5,16 @@ use std::thread;
 use std::time::Duration;
 
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_INVALID_DRIVE, ERROR_MEDIA_CHANGED,
-    ERROR_NO_MEDIA_IN_DRIVE, ERROR_NOT_READY, ERROR_PATH_NOT_FOUND, ERROR_UNRECOGNIZED_VOLUME,
-    HANDLE,
+    ERROR_FILE_NOT_FOUND, ERROR_INVALID_DRIVE, ERROR_MEDIA_CHANGED, ERROR_NO_MEDIA_IN_DRIVE,
+    ERROR_NOT_READY, ERROR_PATH_NOT_FOUND, ERROR_UNRECOGNIZED_VOLUME,
 };
-use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    GetVolumeInformationW, OPEN_EXISTING,
-};
+use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
 use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::IOCTL_STORAGE_CHECK_VERIFY2;
 use windows::core::HSTRING;
 
 use super::{DriveLetter, MediaInfo};
+use crate::win32::{open_volume, win32_code};
 
 /// Result of a single presence check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,21 +94,10 @@ pub struct IoctlProbe;
 
 impl MediaProbe for IoctlProbe {
     fn probe(&mut self, drive: DriveLetter) -> ProbeResult {
-        let path = HSTRING::from(drive.device_path());
-        let handle = match unsafe {
-            CreateFileW(
-                &path,
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                None,
-                OPEN_EXISTING,
-                FILE_FLAGS_AND_ATTRIBUTES(0),
-                None,
-            )
-        } {
-            Ok(handle) => OwnedHandle(handle),
-            Err(error) => {
-                return match win32_code(&error) {
+        let handle = match open_volume(drive) {
+            Ok(handle) => handle,
+            Err(code) => {
+                return match code {
                     code if is_missing_drive(code) => {
                         log::trace!("drive {drive} open failed with error {code}");
                         ProbeResult::DriveMissing
@@ -125,7 +111,7 @@ impl MediaProbe for IoctlProbe {
         let mut returned = 0u32;
         let result = unsafe {
             DeviceIoControl(
-                handle.0,
+                handle.raw(),
                 IOCTL_STORAGE_CHECK_VERIFY2,
                 None,
                 0,
@@ -213,25 +199,4 @@ fn is_missing_drive(code: u32) -> bool {
     code == ERROR_FILE_NOT_FOUND.0
         || code == ERROR_PATH_NOT_FOUND.0
         || code == ERROR_INVALID_DRIVE.0
-}
-
-/// Extracts the Win32 error code from a `windows` error, which wraps it in an
-/// HRESULT (`0x8007xxxx`).
-fn win32_code(error: &windows::core::Error) -> u32 {
-    let hresult = error.code().0 as u32;
-    if hresult & 0xFFFF_0000 == 0x8007_0000 {
-        hresult & 0xFFFF
-    } else {
-        hresult
-    }
-}
-
-struct OwnedHandle(HANDLE);
-
-impl Drop for OwnedHandle {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.0);
-        }
-    }
 }

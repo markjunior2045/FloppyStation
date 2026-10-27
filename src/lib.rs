@@ -6,3 +6,5 @@
 
 pub mod floppy;
 pub mod settings;
+
+mod win32;
