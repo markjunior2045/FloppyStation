@@ -1,4 +1,4 @@
-//! Small Win32 helpers shared by the modules that talk to the drive.
+//! Small Win32 helpers shared by the modules.
 
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{
@@ -9,7 +9,10 @@ use windows::core::HSTRING;
 use crate::floppy::DriveLetter;
 
 /// A handle closed when dropped.
-pub(crate) struct OwnedHandle(HANDLE);
+pub(crate) struct OwnedHandle(pub(crate) HANDLE);
+
+// Kernel handles can be used and closed from any thread.
+unsafe impl Send for OwnedHandle {}
 
 impl OwnedHandle {
     pub(crate) fn raw(&self) -> HANDLE {

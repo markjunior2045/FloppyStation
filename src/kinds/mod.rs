@@ -1,8 +1,8 @@
 //! Game kinds (the `kind` field of a disk configuration).
 //!
-//! Each kind lives in its own module with its own fields and validation. In
-//! Phase 3 they also get launching and closing. Adding a kind means adding a
-//! module and a variant to [`GameTarget`].
+//! Each kind lives in its own module with its own fields, validation and
+//! launching. Closing is common to all kinds, in [`crate::launcher`]. Adding
+//! a kind means adding a module and a variant to [`GameTarget`].
 
 pub mod exe;
 pub mod steam;
@@ -12,6 +12,7 @@ use std::fmt::Write as _;
 use toml::Table;
 
 use crate::diskconfig::ConfigError;
+use crate::launcher::{LaunchError, Started};
 
 pub use exe::ExeGame;
 pub use steam::SteamGame;
@@ -40,6 +41,13 @@ impl GameTarget {
             exe::KIND => Self::Exe(ExeGame::from_fields(game)?),
             _ => return Ok(None),
         }))
+    }
+
+    pub(crate) fn launch(&self) -> Result<Started, LaunchError> {
+        match self {
+            Self::Steam(game) => game.launch(),
+            Self::Exe(game) => game.launch(),
+        }
     }
 
     /// Appends the kind-specific lines of the `[game]` table.
