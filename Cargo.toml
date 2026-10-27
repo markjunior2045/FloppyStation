@@ -18,6 +18,7 @@ path = "src/main.rs"
 env_logger = { version = "0.11.11", default-features = false, features = ["auto-color", "humantime"] }
 log = "0.4.34"
 serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.11.1"
 toml = "1.1.8"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Diagnostics_Debug", "Win32_UI_Shell", "Win32_System_Com"] }
 

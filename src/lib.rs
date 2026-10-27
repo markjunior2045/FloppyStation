@@ -4,7 +4,9 @@
 //! local settings) so it can be reused unchanged by the console prototype
 //! and, later, by the Tauri app.
 
+pub mod diskconfig;
 pub mod floppy;
+pub mod kinds;
 pub mod settings;
 
 mod win32;
