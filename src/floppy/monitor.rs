@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOOPENFILEERRORBOX, SetThreadErrorMode,
@@ -14,7 +14,32 @@ use windows::Win32::System::Diagnostics::Debug::{
 use super::probe::{MediaProbe, ProbeResult};
 use super::{DriveLetter, DriveStatus, FloppyEvent, InsertOrigin, RemovalCause};
 
-#[derive(Debug, Default)]
+/// Wait before the second check that confirms a change. Floppy drives report
+/// "not ready" once right after a disk change, and other programs touching
+/// the drive can cause the same, so a single result is never trusted.
+const DEFAULT_CONFIRM_DELAY: Duration = Duration::from_millis(250);
+
+/// How often each drive is checked, depending on its state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PollIntervals {
+    /// With a disk in the drive (silent on floppy drives), or with the drive
+    /// missing (no hardware access at all).
+    pub present: Duration,
+    /// With an empty drive. Floppy drives step their head to check for a
+    /// disk, so each check makes an audible click.
+    pub empty: Duration,
+}
+
+impl PollIntervals {
+    fn for_status(&self, status: Option<&DriveStatus>) -> Duration {
+        match status {
+            Some(DriveStatus::Empty) => self.empty,
+            _ => self.present,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct DriveTracker {
     /// `None` until the drive has been polled once.
     status: Option<DriveStatus>,
@@ -22,24 +47,49 @@ struct DriveTracker {
     change_token: Option<u64>,
     /// Last unexpected error, so it is only logged when it changes.
     last_error: Option<u32>,
+    /// When the drive should be checked next.
+    next_due: Instant,
 }
 
 /// Turns probe results into [`FloppyEvent`]s, keeping the state of every
 /// watched drive. Has no thread of its own; [`Monitor`] runs it periodically.
 pub struct Poller {
     probe: Box<dyn MediaProbe>,
+    intervals: PollIntervals,
+    confirm_delay: Duration,
     drives: BTreeMap<DriveLetter, DriveTracker>,
 }
 
 impl Poller {
-    pub fn new(drives: impl IntoIterator<Item = DriveLetter>, probe: Box<dyn MediaProbe>) -> Self {
+    pub fn new(
+        drives: impl IntoIterator<Item = DriveLetter>,
+        probe: Box<dyn MediaProbe>,
+        intervals: PollIntervals,
+    ) -> Self {
+        let now = Instant::now();
         Self {
             probe,
+            intervals,
+            confirm_delay: DEFAULT_CONFIRM_DELAY,
             drives: drives
                 .into_iter()
-                .map(|drive| (drive, DriveTracker::default()))
+                .map(|drive| {
+                    let tracker = DriveTracker {
+                        status: None,
+                        change_token: None,
+                        last_error: None,
+                        next_due: now,
+                    };
+                    (drive, tracker)
+                })
                 .collect(),
         }
+    }
+
+    /// Changes the wait before a confirmation check (mainly for tests).
+    pub fn with_confirm_delay(mut self, delay: Duration) -> Self {
+        self.confirm_delay = delay;
+        self
     }
 
     /// Current status of a drive; `None` if it is not watched or was not
@@ -48,15 +98,85 @@ impl Poller {
         self.drives.get(&drive)?.status.as_ref()
     }
 
-    /// Checks every watched drive once and returns what changed.
+    /// Checks every watched drive once, regardless of its schedule.
     pub fn poll(&mut self) -> Vec<FloppyEvent> {
+        self.poll_where(Instant::now(), |_| true)
+    }
+
+    /// Checks the drives whose next check is due at `now`.
+    pub fn poll_due(&mut self, now: Instant) -> Vec<FloppyEvent> {
+        self.poll_where(now, |tracker| tracker.next_due <= now)
+    }
+
+    /// When the next drive check is due; `None` if no drive is watched.
+    pub fn next_due(&self) -> Option<Instant> {
+        self.drives.values().map(|tracker| tracker.next_due).min()
+    }
+
+    fn poll_where(
+        &mut self,
+        now: Instant,
+        due: impl Fn(&DriveTracker) -> bool,
+    ) -> Vec<FloppyEvent> {
         let mut events = Vec::new();
         for (&drive, tracker) in &mut self.drives {
-            let result = self.probe.probe(drive);
-            update(drive, tracker, result, self.probe.as_mut(), &mut events);
+            if !due(tracker) {
+                continue;
+            }
+            let result = probe_confirmed(self.probe.as_mut(), drive, tracker, self.confirm_delay);
+            if let Some(result) = result {
+                update(drive, tracker, result, self.probe.as_mut(), &mut events);
+            }
+            tracker.next_due = now + self.intervals.for_status(tracker.status.as_ref());
         }
         events
     }
+}
+
+/// Probes the drive and, if the result means a change, probes again to
+/// confirm it. Returns `None` when the change was not confirmed.
+fn probe_confirmed(
+    probe: &mut dyn MediaProbe,
+    drive: DriveLetter,
+    tracker: &DriveTracker,
+    confirm_delay: Duration,
+) -> Option<ProbeResult> {
+    let first = probe.probe(drive);
+    if !is_change(tracker, first) {
+        return Some(first);
+    }
+    thread::sleep(confirm_delay);
+    let second = probe.probe(drive);
+
+    // On the very first poll, the first check may be the drive's one-off
+    // "not ready" after a disk change, so the second one wins.
+    if tracker.status.is_none() {
+        return Some(second);
+    }
+    if same_kind(first, second) && is_change(tracker, second) {
+        Some(second)
+    } else {
+        log::debug!("unconfirmed change on drive {drive}: {first:?} then {second:?}; ignored");
+        None
+    }
+}
+
+/// Whether `result` differs from what is known about the drive.
+fn is_change(tracker: &DriveTracker, result: ProbeResult) -> bool {
+    match (&tracker.status, result) {
+        (_, ProbeResult::Unknown(_)) => false,
+        (None, _) => true,
+        (Some(DriveStatus::Missing), ProbeResult::DriveMissing) => false,
+        (Some(DriveStatus::Empty), ProbeResult::NoMedia) => false,
+        (Some(DriveStatus::Present(_)), ProbeResult::Media { change_token }) => {
+            matches!((tracker.change_token, change_token), (Some(old), Some(new)) if old != new)
+        }
+        _ => true,
+    }
+}
+
+fn same_kind(a: ProbeResult, b: ProbeResult) -> bool {
+    std::mem::discriminant(&a) == std::mem::discriminant(&b)
 }
 
 fn update(
@@ -82,7 +202,11 @@ fn update(
     let mut insert = |tracker: &mut DriveTracker, origin, events: &mut Vec<FloppyEvent>| {
         let media = probe.read_media_info(drive);
         tracker.status = Some(DriveStatus::Present(media.clone()));
-        events.push(FloppyEvent::MediaInserted { drive, media, origin });
+        events.push(FloppyEvent::MediaInserted {
+            drive,
+            media,
+            origin,
+        });
     };
 
     let previous = tracker.status.take();
@@ -167,27 +291,28 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    /// Starts polling every `interval`. The thread ends when the monitor is
-    /// dropped or when the receiving end of `events` is closed.
-    pub fn spawn(
-        mut poller: Poller,
-        interval: Duration,
-        events: Sender<FloppyEvent>,
-    ) -> io::Result<Self> {
+    /// Starts polling, following the poller's per-drive schedule. The thread
+    /// ends when the monitor is dropped or when the receiving end of
+    /// `events` is closed.
+    pub fn spawn(mut poller: Poller, events: Sender<FloppyEvent>) -> io::Result<Self> {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let thread = thread::Builder::new()
             .name("floppy-monitor".into())
             .spawn(move || {
                 suppress_error_dialogs();
                 loop {
-                    for event in poller.poll() {
+                    for event in poller.poll_due(Instant::now()) {
                         if events.send(event).is_err() {
                             return;
                         }
                     }
+                    let Some(next) = poller.next_due() else {
+                        return;
+                    };
                     // Waiting on the stop channel instead of sleeping lets
                     // the monitor stop immediately.
-                    match stop_rx.recv_timeout(interval) {
+                    let wait = next.saturating_duration_since(Instant::now());
+                    match stop_rx.recv_timeout(wait) {
                         Err(RecvTimeoutError::Timeout) => {}
                         Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                     }
@@ -227,9 +352,19 @@ mod tests {
     use crate::floppy::MediaInfo;
 
     const A: DriveLetter = DriveLetter('A');
+    const MISSING: ProbeResult = ProbeResult::DriveMissing;
+    const EMPTY: ProbeResult = ProbeResult::NoMedia;
+    const NO_TOKEN: ProbeResult = ProbeResult::Media { change_token: None };
+    const CONNECTED: FloppyEvent = FloppyEvent::DriveConnected { drive: A };
+    const DISCONNECTED: FloppyEvent = FloppyEvent::DriveDisconnected { drive: A };
+    const INTERVALS: PollIntervals = PollIntervals {
+        present: Duration::from_secs(1),
+        empty: Duration::from_secs(3),
+    };
 
-    /// Probe that replays a scripted sequence of results. Each disk's
-    /// serial is its change token, so tests can tell disks apart.
+    /// Probe that returns one scripted result per check, repeating the last
+    /// one when the script runs out. Each disk's serial is its change token,
+    /// so tests can tell disks apart.
     struct FakeProbe {
         script: VecDeque<ProbeResult>,
         last: ProbeResult,
@@ -254,23 +389,33 @@ mod tests {
         }
     }
 
+    fn poller(script: &[ProbeResult]) -> Poller {
+        let probe = FakeProbe {
+            script: script.iter().copied().collect(),
+            last: EMPTY,
+        };
+        Poller::new([A], Box::new(probe), INTERVALS).with_confirm_delay(Duration::ZERO)
+    }
+
+    /// Polls `count` times and returns the events of each poll.
+    fn polls(script: &[ProbeResult], count: usize) -> Vec<Vec<FloppyEvent>> {
+        let mut poller = poller(script);
+        (0..count).map(|_| poller.poll()).collect()
+    }
+
     fn disk(token: u64) -> ProbeResult {
         ProbeResult::Media {
             change_token: Some(token),
         }
     }
 
-    fn media(token: u32) -> MediaInfo {
-        MediaInfo {
-            serial: Some(token),
-            label: None,
-        }
-    }
-
     fn inserted(token: u32, origin: InsertOrigin) -> FloppyEvent {
         FloppyEvent::MediaInserted {
             drive: A,
-            media: media(token),
+            media: MediaInfo {
+                serial: Some(token),
+                label: None,
+            },
             origin,
         }
     }
@@ -279,34 +424,30 @@ mod tests {
         FloppyEvent::MediaRemoved { drive: A, cause }
     }
 
-    const CONNECTED: FloppyEvent = FloppyEvent::DriveConnected { drive: A };
-    const DISCONNECTED: FloppyEvent = FloppyEvent::DriveDisconnected { drive: A };
-
-    /// Runs one poll per scripted result and returns the events of each.
-    fn run(script: &[ProbeResult]) -> Vec<Vec<FloppyEvent>> {
-        let probe = FakeProbe {
-            script: script.iter().copied().collect(),
-            last: ProbeResult::NoMedia,
-        };
-        let mut poller = Poller::new([A], Box::new(probe));
-        script.iter().map(|_| poller.poll()).collect()
+    #[test]
+    fn reports_initial_state() {
+        assert_eq!(polls(&[MISSING], 1), [vec![DISCONNECTED]]);
+        assert_eq!(polls(&[EMPTY], 1), [vec![CONNECTED]]);
+        assert_eq!(
+            polls(&[disk(1)], 1),
+            [vec![CONNECTED, inserted(1, InsertOrigin::PresentAtStartup)]]
+        );
     }
 
     #[test]
-    fn reports_initial_state() {
-        assert_eq!(run(&[ProbeResult::DriveMissing]), [vec![DISCONNECTED]]);
-        assert_eq!(run(&[ProbeResult::NoMedia]), [vec![CONNECTED]]);
+    fn disk_present_at_startup_despite_pending_media_change() {
+        // The first check after a disk change reports "not ready".
         assert_eq!(
-            run(&[disk(1)]),
+            polls(&[EMPTY, disk(1)], 1),
             [vec![CONNECTED, inserted(1, InsertOrigin::PresentAtStartup)]]
         );
     }
 
     #[test]
     fn insert_and_remove() {
-        let events = run(&[ProbeResult::NoMedia, disk(1), disk(1), ProbeResult::NoMedia]);
+        let script = [EMPTY, EMPTY, disk(1), disk(1), disk(1), EMPTY, EMPTY];
         assert_eq!(
-            events,
+            polls(&script, 4),
             [
                 vec![CONNECTED],
                 vec![inserted(1, InsertOrigin::Inserted)],
@@ -317,8 +458,23 @@ mod tests {
     }
 
     #[test]
+    fn ignores_unconfirmed_removal() {
+        // A single "not ready" while a disk is in is not a removal.
+        let events = polls(&[disk(1), disk(1), EMPTY, disk(1), disk(1)], 3);
+        assert_eq!(events[1], []);
+        assert_eq!(events[2], []);
+    }
+
+    #[test]
+    fn ignores_change_contradicted_by_confirmation() {
+        let events = polls(&[EMPTY, EMPTY, disk(1), MISSING, EMPTY], 3);
+        assert_eq!(events[1], []);
+        assert_eq!(events[2], []);
+    }
+
+    #[test]
     fn detects_swap_between_polls() {
-        let events = run(&[disk(1), disk(2)]);
+        let events = polls(&[disk(1), disk(1), disk(2), disk(2)], 2);
         assert_eq!(
             events[1],
             [
@@ -330,8 +486,7 @@ mod tests {
 
     #[test]
     fn missing_change_token_is_not_a_swap() {
-        let no_token = ProbeResult::Media { change_token: None };
-        let events = run(&[disk(1), no_token, disk(1)]);
+        let events = polls(&[disk(1), disk(1), NO_TOKEN, disk(1)], 3);
         assert_eq!(events[1], []);
         assert_eq!(events[2], []);
     }
@@ -339,8 +494,7 @@ mod tests {
     #[test]
     fn swap_seen_after_media_changed_error() {
         // ERROR_MEDIA_CHANGED yields no token; the next poll shows the new one.
-        let no_token = ProbeResult::Media { change_token: None };
-        let events = run(&[disk(1), no_token, disk(2)]);
+        let events = polls(&[disk(1), disk(1), NO_TOKEN, disk(2), disk(2)], 3);
         assert_eq!(events[1], []);
         assert_eq!(
             events[2],
@@ -353,7 +507,7 @@ mod tests {
 
     #[test]
     fn drive_unplugged_with_disk() {
-        let events = run(&[disk(1), ProbeResult::DriveMissing]);
+        let events = polls(&[disk(1), disk(1), MISSING, MISSING], 2);
         assert_eq!(
             events[1],
             [removed(RemovalCause::DriveDisconnected), DISCONNECTED]
@@ -362,30 +516,30 @@ mod tests {
 
     #[test]
     fn drive_replugged_with_disk_counts_as_insertion() {
-        let events = run(&[ProbeResult::DriveMissing, disk(1)]);
-        assert_eq!(
-            events[1],
-            [CONNECTED, inserted(1, InsertOrigin::Inserted)]
-        );
+        let events = polls(&[MISSING, MISSING, disk(1), disk(1)], 2);
+        assert_eq!(events[1], [CONNECTED, inserted(1, InsertOrigin::Inserted)]);
     }
 
     #[test]
     fn empty_drive_unplugged_and_replugged() {
-        let events = run(&[
-            ProbeResult::NoMedia,
-            ProbeResult::DriveMissing,
-            ProbeResult::DriveMissing,
-            ProbeResult::NoMedia,
-        ]);
+        let script = [EMPTY, EMPTY, MISSING, MISSING, MISSING, EMPTY, EMPTY];
         assert_eq!(
-            events,
+            polls(&script, 4),
             [vec![CONNECTED], vec![DISCONNECTED], vec![], vec![CONNECTED]]
         );
     }
 
     #[test]
     fn unknown_errors_keep_state() {
-        let events = run(&[disk(1), ProbeResult::Unknown(5), disk(1), ProbeResult::NoMedia]);
+        let script = [
+            disk(1),
+            disk(1),
+            ProbeResult::Unknown(5),
+            disk(1),
+            EMPTY,
+            EMPTY,
+        ];
+        let events = polls(&script, 4);
         assert_eq!(events[1], []);
         assert_eq!(events[2], []);
         assert_eq!(events[3], [removed(RemovalCause::Ejected)]);
@@ -393,32 +547,53 @@ mod tests {
 
     #[test]
     fn unknown_error_on_first_poll_reports_nothing_yet() {
-        let events = run(&[ProbeResult::Unknown(5), ProbeResult::NoMedia]);
+        let unknown = ProbeResult::Unknown(5);
+        let events = polls(&[unknown, EMPTY, EMPTY], 2);
         assert_eq!(events, [vec![], vec![CONNECTED]]);
     }
 
     #[test]
     fn tracks_status() {
-        let probe = FakeProbe {
-            script: [disk(7)].into(),
-            last: ProbeResult::NoMedia,
-        };
-        let mut poller = Poller::new([A], Box::new(probe));
+        let mut poller = poller(&[disk(7)]);
         assert_eq!(poller.status(A), None);
         poller.poll();
-        assert_eq!(poller.status(A), Some(&DriveStatus::Present(media(7))));
+        assert!(matches!(poller.status(A), Some(DriveStatus::Present(_))));
+    }
+
+    #[test]
+    fn empty_drive_is_polled_less_often() {
+        // Checks the drive once and returns how long until the next check.
+        fn next_wait(script: &[ProbeResult]) -> Duration {
+            let mut poller = poller(script);
+            let now = Instant::now();
+            assert!(!poller.poll_due(now).is_empty(), "first poll must run");
+            poller.next_due().unwrap() - now
+        }
+
+        assert_eq!(next_wait(&[EMPTY]), INTERVALS.empty);
+        assert_eq!(next_wait(&[disk(1)]), INTERVALS.present);
+        assert_eq!(next_wait(&[MISSING]), INTERVALS.present);
+
+        let mut empty = poller(&[EMPTY]);
+        let now = Instant::now();
+        empty.poll_due(now);
+        assert_eq!(empty.poll_due(now + INTERVALS.present), []);
+        assert_eq!(empty.status(A), Some(&DriveStatus::Empty));
     }
 
     #[test]
     fn monitor_sends_events_and_stops_on_drop() {
-        let probe = FakeProbe {
-            script: [ProbeResult::NoMedia].into(),
-            last: ProbeResult::NoMedia,
+        let intervals = PollIntervals {
+            present: Duration::from_secs(60),
+            empty: Duration::from_secs(60),
         };
+        let probe = FakeProbe {
+            script: [EMPTY].into(),
+            last: EMPTY,
+        };
+        let poller = Poller::new([A], Box::new(probe), intervals);
         let (tx, rx) = mpsc::channel();
-        let monitor =
-            Monitor::spawn(Poller::new([A], Box::new(probe)), Duration::from_secs(60), tx)
-                .unwrap();
+        let monitor = Monitor::spawn(poller, tx).unwrap();
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), CONNECTED);
         drop(monitor); // must return promptly despite the 60 s interval
         assert!(rx.recv().is_err());

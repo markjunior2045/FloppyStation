@@ -11,7 +11,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub use monitor::{Monitor, Poller, suppress_error_dialogs};
+pub use monitor::{Monitor, PollIntervals, Poller, suppress_error_dialogs};
 pub use probe::{IoctlProbe, MediaProbe, ProbeKind, ProbeResult, VolumeProbe};
 
 /// A drive letter, always stored in uppercase (`'A'`..=`'Z'`).

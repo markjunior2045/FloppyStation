@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
 
-use crate::floppy::DriveLetter;
+use crate::floppy::{DriveLetter, PollIntervals};
 
 pub const CURRENT_VERSION: u32 = 1;
 pub const DEFAULT_POLL_INTERVAL_MS: u64 = 1000;
+pub const DEFAULT_EMPTY_POLL_INTERVAL_MS: u64 = 3000;
 pub const MIN_POLL_INTERVAL_MS: u64 = 250;
 pub const MAX_POLL_INTERVAL_MS: u64 = 10_000;
 
@@ -27,8 +28,13 @@ pub struct Settings {
     pub version: u32,
     /// Drive to watch.
     pub drive: DriveLetter,
-    /// Time between two checks of the drive, in milliseconds.
+    /// Time between two checks of the drive while it has a disk (or is
+    /// missing), in milliseconds.
     pub poll_interval_ms: u64,
+    /// Time between two checks of an empty drive, in milliseconds. Longer
+    /// than `poll_interval_ms` because checking an empty floppy drive makes
+    /// it click.
+    pub empty_poll_interval_ms: u64,
 }
 
 impl Default for Settings {
@@ -37,6 +43,7 @@ impl Default for Settings {
             version: CURRENT_VERSION,
             drive: DriveLetter::default(),
             poll_interval_ms: DEFAULT_POLL_INTERVAL_MS,
+            empty_poll_interval_ms: DEFAULT_EMPTY_POLL_INTERVAL_MS,
         }
     }
 }
@@ -124,17 +131,24 @@ impl Settings {
         Duration::from_millis(self.poll_interval_ms)
     }
 
-    fn normalize(&mut self) {
-        let clamped = self
-            .poll_interval_ms
-            .clamp(MIN_POLL_INTERVAL_MS, MAX_POLL_INTERVAL_MS);
-        if clamped != self.poll_interval_ms {
-            log::warn!(
-                "poll_interval_ms = {} is out of range, using {clamped}",
-                self.poll_interval_ms
-            );
-            self.poll_interval_ms = clamped;
+    pub fn poll_intervals(&self) -> PollIntervals {
+        PollIntervals {
+            present: Duration::from_millis(self.poll_interval_ms),
+            empty: Duration::from_millis(self.empty_poll_interval_ms),
         }
+    }
+
+    fn normalize(&mut self) {
+        clamp_interval("poll_interval_ms", &mut self.poll_interval_ms);
+        clamp_interval("empty_poll_interval_ms", &mut self.empty_poll_interval_ms);
+    }
+}
+
+fn clamp_interval(name: &str, value: &mut u64) {
+    let clamped = (*value).clamp(MIN_POLL_INTERVAL_MS, MAX_POLL_INTERVAL_MS);
+    if clamped != *value {
+        log::warn!("{name} = {value} is out of range, using {clamped}");
+        *value = clamped;
     }
 }
 
@@ -166,11 +180,18 @@ mod tests {
             version = 1
             drive = "b"
             poll_interval_ms = 2000
+            empty_poll_interval_ms = 5000
             "#,
         )
         .unwrap();
         assert_eq!(settings.drive, DriveLetter::parse("B").unwrap());
-        assert_eq!(settings.poll_interval(), Duration::from_secs(2));
+        assert_eq!(
+            settings.poll_intervals(),
+            PollIntervals {
+                present: Duration::from_secs(2),
+                empty: Duration::from_secs(5),
+            }
+        );
     }
 
     #[test]
@@ -179,6 +200,8 @@ mod tests {
         assert_eq!(fast.poll_interval_ms, MIN_POLL_INTERVAL_MS);
         let slow = Settings::parse("poll_interval_ms = 999999").unwrap();
         assert_eq!(slow.poll_interval_ms, MAX_POLL_INTERVAL_MS);
+        let empty = Settings::parse("empty_poll_interval_ms = 0").unwrap();
+        assert_eq!(empty.empty_poll_interval_ms, MIN_POLL_INTERVAL_MS);
     }
 
     #[test]
@@ -217,6 +240,10 @@ mod tests {
     #[test]
     fn resolves_default_path() {
         let path = Settings::default_path().unwrap();
-        assert!(path.ends_with(r"floppy-station\settings.toml"), "{}", path.display());
+        assert!(
+            path.ends_with(r"floppy-station\settings.toml"),
+            "{}",
+            path.display()
+        );
     }
 }

@@ -7,17 +7,20 @@ use std::thread;
 use std::time::Instant;
 
 use floppy_station::floppy::{DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult};
-use floppy_station::settings::Settings;
+use floppy_station::settings::{MAX_POLL_INTERVAL_MS, MIN_POLL_INTERVAL_MS, Settings};
 
 const USAGE: &str = "\
-usage: floppy-station [--drive <letter>] [--probe ioctl|volume] [--diag]
+usage: floppy-station [--drive <letter>] [--empty-interval <ms>] [--probe ioctl|volume] [--diag]
 
-  --drive <letter>  drive to watch, overriding the settings file
-  --probe <kind>    how to check the drive for a disk (default: ioctl)
-  --diag            print the raw result and duration of every check";
+  --drive <letter>       drive to watch, overriding the settings file
+  --empty-interval <ms>  time between checks of an empty drive, overriding
+                         the settings file
+  --probe <kind>         how to check the drive for a disk (default: ioctl)
+  --diag                 print the raw result and duration of every check";
 
 struct Args {
     drive: Option<DriveLetter>,
+    empty_interval_ms: Option<u64>,
     probe: ProbeKind,
     diag: bool,
 }
@@ -25,6 +28,7 @@ struct Args {
 fn parse_args() -> Result<Args, String> {
     let mut args = Args {
         drive: None,
+        empty_interval_ms: None,
         probe: ProbeKind::default(),
         diag: false,
     };
@@ -37,10 +41,16 @@ fn parse_args() -> Result<Args, String> {
                 args.drive =
                     Some(DriveLetter::parse(&value).ok_or(format!("invalid drive: {value}"))?);
             }
+            "--empty-interval" => {
+                let value = iter.next().ok_or("--empty-interval needs a value")?;
+                let ms: u64 = value
+                    .parse()
+                    .map_err(|_| format!("invalid interval: {value}"))?;
+                args.empty_interval_ms = Some(ms.clamp(MIN_POLL_INTERVAL_MS, MAX_POLL_INTERVAL_MS));
+            }
             "--probe" => {
                 let value = iter.next().ok_or("--probe needs a value")?;
-                args.probe =
-                    ProbeKind::parse(&value).ok_or(format!("unknown probe: {value}"))?;
+                args.probe = ProbeKind::parse(&value).ok_or(format!("unknown probe: {value}"))?;
             }
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown argument: {other}")),
@@ -70,10 +80,14 @@ fn main() -> ExitCode {
     if let Some(drive) = args.drive {
         settings.drive = drive;
     }
+    if let Some(ms) = args.empty_interval_ms {
+        settings.empty_poll_interval_ms = ms;
+    }
     println!(
-        "Watching drive {} every {} ms (probe: {}). Press Ctrl+C to quit.",
+        "Watching drive {} every {} ms, {} ms when empty (probe: {}). Press Ctrl+C to quit.",
         settings.drive,
         settings.poll_interval_ms,
+        settings.empty_poll_interval_ms,
         args.probe.name()
     );
 
@@ -83,8 +97,12 @@ fn main() -> ExitCode {
     }
 
     let (tx, rx) = mpsc::channel();
-    let poller = Poller::new([settings.drive], args.probe.create());
-    let _monitor = match Monitor::spawn(poller, settings.poll_interval(), tx) {
+    let poller = Poller::new(
+        [settings.drive],
+        args.probe.create(),
+        settings.poll_intervals(),
+    );
+    let _monitor = match Monitor::spawn(poller, tx) {
         Ok(monitor) => monitor,
         Err(error) => {
             log::error!("could not start the drive monitor: {error}");
@@ -94,7 +112,11 @@ fn main() -> ExitCode {
 
     let start = Instant::now();
     for event in rx {
-        println!("[{:>9.3}s] {}", start.elapsed().as_secs_f64(), describe(&event));
+        println!(
+            "[{:>9.3}s] {}",
+            start.elapsed().as_secs_f64(),
+            describe(&event)
+        );
     }
     ExitCode::SUCCESS
 }
