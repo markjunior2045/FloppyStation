@@ -17,6 +17,9 @@ pub const DEFAULT_POLL_INTERVAL_MS: u64 = 1000;
 pub const DEFAULT_EMPTY_POLL_INTERVAL_MS: u64 = 2000;
 pub const MIN_POLL_INTERVAL_MS: u64 = 250;
 pub const MAX_POLL_INTERVAL_MS: u64 = 10_000;
+pub const DEFAULT_CLOSE_TIMEOUT_S: u64 = 10;
+pub const MIN_CLOSE_TIMEOUT_S: u64 = 1;
+pub const MAX_CLOSE_TIMEOUT_S: u64 = 60;
 
 const APP_DIR: &str = "floppy-station";
 const FILE_NAME: &str = "settings.toml";
@@ -35,6 +38,59 @@ pub struct Settings {
     /// than `poll_interval_ms` because checking an empty floppy drive makes
     /// it click.
     pub empty_poll_interval_ms: u64,
+    /// What to do with the game when its disk is removed.
+    pub on_removal: RemovalAction,
+    /// With [`RemovalAction::Close`], seconds to wait for the game to close
+    /// before forcing it.
+    pub close_timeout_s: u64,
+    /// What to do with the game when the drive is unplugged.
+    pub on_drive_disconnect: DisconnectAction,
+}
+
+/// What to do with a game when its disk is removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RemovalAction {
+    /// Ask the game to close, and force it after `close_timeout_s`.
+    #[default]
+    Close,
+    /// Force the game to close right away.
+    Force,
+    /// Leave the game open.
+    #[serde(rename = "none")]
+    Leave,
+}
+
+impl RemovalAction {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "close" => Some(Self::Close),
+            "force" => Some(Self::Force),
+            "none" => Some(Self::Leave),
+            _ => None,
+        }
+    }
+}
+
+/// What to do with a game when the drive is unplugged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisconnectAction {
+    /// Same as removing the disk.
+    #[default]
+    Removal,
+    /// Leave the game open.
+    Ignore,
+}
+
+impl DisconnectAction {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "removal" => Some(Self::Removal),
+            "ignore" => Some(Self::Ignore),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Settings {
@@ -44,6 +100,9 @@ impl Default for Settings {
             drive: DriveLetter::default(),
             poll_interval_ms: DEFAULT_POLL_INTERVAL_MS,
             empty_poll_interval_ms: DEFAULT_EMPTY_POLL_INTERVAL_MS,
+            on_removal: RemovalAction::default(),
+            close_timeout_s: DEFAULT_CLOSE_TIMEOUT_S,
+            on_drive_disconnect: DisconnectAction::default(),
         }
     }
 }
@@ -85,7 +144,7 @@ impl std::error::Error for SettingsError {}
 impl Settings {
     /// Default location of the settings file.
     pub fn default_path() -> Result<PathBuf, SettingsError> {
-        Ok(roaming_app_data()?.join(APP_DIR).join(FILE_NAME))
+        Ok(app_dir()?.join(FILE_NAME))
     }
 
     /// Loads the settings from the default location. Never fails: a missing
@@ -138,18 +197,34 @@ impl Settings {
         }
     }
 
+    pub fn close_timeout(&self) -> Duration {
+        Duration::from_secs(self.close_timeout_s)
+    }
+
     fn normalize(&mut self) {
-        clamp_interval("poll_interval_ms", &mut self.poll_interval_ms);
-        clamp_interval("empty_poll_interval_ms", &mut self.empty_poll_interval_ms);
+        let interval = MIN_POLL_INTERVAL_MS..=MAX_POLL_INTERVAL_MS;
+        clamp("poll_interval_ms", &mut self.poll_interval_ms, &interval);
+        clamp(
+            "empty_poll_interval_ms",
+            &mut self.empty_poll_interval_ms,
+            &interval,
+        );
+        let timeout = MIN_CLOSE_TIMEOUT_S..=MAX_CLOSE_TIMEOUT_S;
+        clamp("close_timeout_s", &mut self.close_timeout_s, &timeout);
     }
 }
 
-fn clamp_interval(name: &str, value: &mut u64) {
-    let clamped = (*value).clamp(MIN_POLL_INTERVAL_MS, MAX_POLL_INTERVAL_MS);
+fn clamp(name: &str, value: &mut u64, range: &std::ops::RangeInclusive<u64>) {
+    let clamped = (*value).clamp(*range.start(), *range.end());
     if clamped != *value {
         log::warn!("{name} = {value} is out of range, using {clamped}");
         *value = clamped;
     }
+}
+
+/// Folder of the app's local files, `%APPDATA%\floppy-station`.
+pub(crate) fn app_dir() -> Result<PathBuf, SettingsError> {
+    Ok(roaming_app_data()?.join(APP_DIR))
 }
 
 fn roaming_app_data() -> Result<PathBuf, SettingsError> {
@@ -181,6 +256,9 @@ mod tests {
             drive = "b"
             poll_interval_ms = 2000
             empty_poll_interval_ms = 5000
+            on_removal = "none"
+            close_timeout_s = 30
+            on_drive_disconnect = "ignore"
             "#,
         )
         .unwrap();
@@ -192,6 +270,14 @@ mod tests {
                 empty: Duration::from_secs(5),
             }
         );
+        assert_eq!(settings.on_removal, RemovalAction::Leave);
+        assert_eq!(settings.close_timeout(), Duration::from_secs(30));
+        assert_eq!(settings.on_drive_disconnect, DisconnectAction::Ignore);
+    }
+
+    #[test]
+    fn rejects_unknown_removal_action() {
+        assert!(Settings::parse(r#"on_removal = "explode""#).is_err());
     }
 
     #[test]
@@ -202,6 +288,8 @@ mod tests {
         assert_eq!(slow.poll_interval_ms, MAX_POLL_INTERVAL_MS);
         let empty = Settings::parse("empty_poll_interval_ms = 0").unwrap();
         assert_eq!(empty.empty_poll_interval_ms, MIN_POLL_INTERVAL_MS);
+        let timeout = Settings::parse("close_timeout_s = 0").unwrap();
+        assert_eq!(timeout.close_timeout_s, MIN_CLOSE_TIMEOUT_S);
     }
 
     #[test]
@@ -228,11 +316,13 @@ mod tests {
         let settings = Settings {
             drive: DriveLetter::parse("C").unwrap(),
             poll_interval_ms: 1500,
+            on_removal: RemovalAction::Leave,
             ..Settings::default()
         };
         settings.save_to(&path).unwrap();
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains(r#"drive = "C:""#), "{text}");
+        assert!(text.contains(r#"on_removal = "none""#), "{text}");
         assert_eq!(Settings::load_from(&path).unwrap(), settings);
         fs::remove_dir_all(&dir).unwrap();
     }
