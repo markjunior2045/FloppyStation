@@ -112,7 +112,10 @@ impl MediaProbe for IoctlProbe {
             Ok(handle) => OwnedHandle(handle),
             Err(error) => {
                 return match win32_code(&error) {
-                    code if is_missing_drive(code) => ProbeResult::DriveMissing,
+                    code if is_missing_drive(code) => {
+                        log::trace!("drive {drive} open failed with error {code}");
+                        ProbeResult::DriveMissing
+                    }
                     code => ProbeResult::Unknown(code),
                 };
             }
@@ -140,7 +143,7 @@ impl MediaProbe for IoctlProbe {
             },
             Err(error) => match win32_code(&error) {
                 code if is_no_media(code) => {
-                    log::trace!("drive {drive}: check failed with error {code}");
+                    log::trace!("drive {drive} check failed with error {code}");
                     ProbeResult::NoMedia
                 }
                 code if code == ERROR_MEDIA_CHANGED.0 => ProbeResult::Media { change_token: None },

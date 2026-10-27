@@ -14,7 +14,7 @@ use crate::floppy::{DriveLetter, PollIntervals};
 
 pub const CURRENT_VERSION: u32 = 1;
 pub const DEFAULT_POLL_INTERVAL_MS: u64 = 1000;
-pub const DEFAULT_EMPTY_POLL_INTERVAL_MS: u64 = 3000;
+pub const DEFAULT_EMPTY_POLL_INTERVAL_MS: u64 = 2000;
 pub const MIN_POLL_INTERVAL_MS: u64 = 250;
 pub const MAX_POLL_INTERVAL_MS: u64 = 10_000;
 
