@@ -1,14 +1,17 @@
 //! Low-level checks of a single drive, kept behind the [`MediaProbe`] trait so
 //! the monitor's state machine can be tested without hardware.
 
+use std::thread;
+use std::time::Duration;
+
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_INVALID_DRIVE, ERROR_MEDIA_CHANGED,
     ERROR_NO_MEDIA_IN_DRIVE, ERROR_NOT_READY, ERROR_PATH_NOT_FOUND, ERROR_UNRECOGNIZED_VOLUME,
     HANDLE,
 };
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, GetVolumeInformationW,
-    OPEN_EXISTING,
+    CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    GetVolumeInformationW, OPEN_EXISTING,
 };
 use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::IOCTL_STORAGE_CHECK_VERIFY2;
@@ -38,11 +41,21 @@ pub trait MediaProbe: Send {
     fn probe(&mut self, drive: DriveLetter) -> ProbeResult;
 
     /// Reads details of the disk. Only called when a disk shows up, since it
-    /// may access the disk itself.
+    /// may access the disk itself. Retries once if the drive is momentarily
+    /// not ready, which happens right after a disk change.
     fn read_media_info(&mut self, drive: DriveLetter) -> MediaInfo {
-        read_volume(drive).unwrap_or_default()
+        match read_volume(drive) {
+            Ok(info) => info,
+            Err(code) if is_no_media(code) => {
+                thread::sleep(READ_RETRY_DELAY);
+                read_volume(drive).unwrap_or_default()
+            }
+            Err(_) => MediaInfo::default(),
+        }
     }
 }
+
+const READ_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 /// Available probe implementations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -126,7 +139,10 @@ impl MediaProbe for IoctlProbe {
                     .then_some(u64::from(change_count)),
             },
             Err(error) => match win32_code(&error) {
-                code if is_no_media(code) => ProbeResult::NoMedia,
+                code if is_no_media(code) => {
+                    log::trace!("drive {drive}: check failed with error {code}");
+                    ProbeResult::NoMedia
+                }
                 code if code == ERROR_MEDIA_CHANGED.0 => ProbeResult::Media { change_token: None },
                 code if is_missing_drive(code) => ProbeResult::DriveMissing,
                 code => ProbeResult::Unknown(code),
@@ -191,7 +207,9 @@ fn is_no_media(code: u32) -> bool {
 }
 
 fn is_missing_drive(code: u32) -> bool {
-    code == ERROR_FILE_NOT_FOUND.0 || code == ERROR_PATH_NOT_FOUND.0 || code == ERROR_INVALID_DRIVE.0
+    code == ERROR_FILE_NOT_FOUND.0
+        || code == ERROR_PATH_NOT_FOUND.0
+        || code == ERROR_INVALID_DRIVE.0
 }
 
 /// Extracts the Win32 error code from a `windows` error, which wraps it in an
