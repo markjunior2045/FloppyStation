@@ -1,29 +1,42 @@
 //! Console prototype entry point. Only wires the library modules together
 //! and prints events; all logic lives in the `floppy_station` library.
 
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
+use floppy_station::controller::{Controller, GameEvent, System};
 use floppy_station::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
 use floppy_station::floppy::{DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult};
 use floppy_station::kinds::GameTarget;
-use floppy_station::settings::{MAX_POLL_INTERVAL_MS, MIN_POLL_INTERVAL_MS, Settings};
+use floppy_station::launcher::{CloseMode, CloseOutcome};
+use floppy_station::settings::{
+    DisconnectAction, MAX_POLL_INTERVAL_MS, MIN_POLL_INTERVAL_MS, RemovalAction, Settings,
+};
+use floppy_station::trust::{self, RevokeError, TrustStore};
 
 const USAGE: &str = "\
-usage: floppy-station [options]             watch the drive and print events
+usage: floppy-station [options]             watch the drive, launch and close games
        floppy-station disk inspect [options]  show what the disk in the drive contains
        floppy-station disk write <file> [options]
                                               validate a local config file and write
                                               it to the disk
        floppy-station disk remove [options]   remove the config from the disk
+       floppy-station trust [options]         approve the program on the disk in the drive
+       floppy-station trust list              list the approved disk configs
+       floppy-station trust revoke <hash>     remove an approval (the start of the hash
+                                              is enough)
 
 options:
   --drive <letter>       drive to watch, overriding the settings file
   --empty-interval <ms>  time between checks of an empty drive, overriding
                          the settings file
+  --on-removal <action>  close | force | none, overriding the settings file
+  --on-disconnect <action>
+                         removal | ignore, overriding the settings file
   --probe <kind>         how to check the drive for a disk (default: ioctl)
   --diag                 print the raw result and duration of every check";
 
@@ -32,12 +45,17 @@ enum Command {
     DiskInspect,
     DiskWrite(PathBuf),
     DiskRemove,
+    Trust,
+    TrustList,
+    TrustRevoke(String),
 }
 
 struct Args {
     command: Command,
     drive: Option<DriveLetter>,
     empty_interval_ms: Option<u64>,
+    on_removal: Option<RemovalAction>,
+    on_disconnect: Option<DisconnectAction>,
     probe: ProbeKind,
     diag: bool,
 }
@@ -47,6 +65,8 @@ fn parse_args() -> Result<Args, String> {
         command: Command::Watch,
         drive: None,
         empty_interval_ms: None,
+        on_removal: None,
+        on_disconnect: None,
         probe: ProbeKind::default(),
         diag: false,
     };
@@ -66,6 +86,17 @@ fn parse_args() -> Result<Args, String> {
                     .map_err(|_| format!("invalid interval: {value}"))?;
                 args.empty_interval_ms = Some(ms.clamp(MIN_POLL_INTERVAL_MS, MAX_POLL_INTERVAL_MS));
             }
+            "--on-removal" => {
+                let value = iter.next().ok_or("--on-removal needs a value")?;
+                args.on_removal =
+                    Some(RemovalAction::parse(&value).ok_or(format!("unknown action: {value}"))?);
+            }
+            "--on-disconnect" => {
+                let value = iter.next().ok_or("--on-disconnect needs a value")?;
+                args.on_disconnect = Some(
+                    DisconnectAction::parse(&value).ok_or(format!("unknown action: {value}"))?,
+                );
+            }
             "--probe" => {
                 let value = iter.next().ok_or("--probe needs a value")?;
                 args.probe = ProbeKind::parse(&value).ok_or(format!("unknown probe: {value}"))?;
@@ -78,6 +109,16 @@ fn parse_args() -> Result<Args, String> {
                     }
                     Some("remove") => Command::DiskRemove,
                     _ => return Err("disk needs inspect, write or remove".into()),
+                };
+            }
+            "trust" => {
+                args.command = match iter.next().as_deref() {
+                    None => Command::Trust,
+                    Some("list") => Command::TrustList,
+                    Some("revoke") => {
+                        Command::TrustRevoke(iter.next().ok_or("trust revoke needs a hash")?)
+                    }
+                    Some(other) => return Err(format!("unknown trust command: {other}")),
                 };
             }
             "-h" | "--help" => return Err(String::new()),
@@ -111,11 +152,20 @@ fn main() -> ExitCode {
     if let Some(ms) = args.empty_interval_ms {
         settings.empty_poll_interval_ms = ms;
     }
+    if let Some(action) = args.on_removal {
+        settings.on_removal = action;
+    }
+    if let Some(action) = args.on_disconnect {
+        settings.on_drive_disconnect = action;
+    }
     match &args.command {
         Command::Watch => {}
         Command::DiskInspect => return disk_inspect(settings.drive),
         Command::DiskWrite(file) => return disk_write(settings.drive, file),
         Command::DiskRemove => return disk_remove(settings.drive),
+        Command::Trust => return trust_disk(settings.drive),
+        Command::TrustList => return trust_list(),
+        Command::TrustRevoke(prefix) => return trust_revoke(prefix),
     }
 
     println!(
@@ -131,6 +181,15 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    println!(
+        "On removal: {}. On drive unplugged: {}.",
+        describe_removal(&settings),
+        match settings.on_drive_disconnect {
+            DisconnectAction::Removal => "same as removal",
+            DisconnectAction::Ignore => "leave the game open",
+        }
+    );
+
     let (tx, rx) = mpsc::channel();
     let poller = Poller::new(
         [settings.drive],
@@ -145,21 +204,27 @@ fn main() -> ExitCode {
         }
     };
 
+    // Game events also come from the threads that close games, so they are
+    // printed by a thread of their own.
     let start = Instant::now();
+    let (game_tx, game_rx) = mpsc::channel();
+    thread::spawn(move || {
+        for event in game_rx {
+            println!(
+                "[{:>9.3}s]   {}",
+                start.elapsed().as_secs_f64(),
+                describe_game_event(&event)
+            );
+        }
+    });
+    let mut controller = Controller::new(System, &settings, game_tx);
     for event in rx {
         println!(
             "[{:>9.3}s] {}",
             start.elapsed().as_secs_f64(),
             describe(&event)
         );
-        if let FloppyEvent::MediaInserted { drive, .. } = event {
-            let inspection = diskconfig::inspect_drive(drive);
-            println!(
-                "[{:>9.3}s]   {}",
-                start.elapsed().as_secs_f64(),
-                describe_inspection(&inspection)
-            );
-        }
+        controller.handle(&event);
     }
     ExitCode::SUCCESS
 }
@@ -208,6 +273,13 @@ fn disk_write(drive: DriveLetter, file: &PathBuf) -> ExitCode {
                 "written in {:.1} s, hash {hash}",
                 start.elapsed().as_secs_f64()
             );
+            // A program written by the app on this PC is approved.
+            if matches!(config.target, GameTarget::Exe(_)) {
+                match trust::approve(&hash, &config) {
+                    Ok(_) => println!("approved on this PC"),
+                    Err(error) => eprintln!("could not approve it ({}): {error}", error.code()),
+                }
+            }
             println!("{}", describe_inspection(&diskconfig::inspect_drive(drive)));
             ExitCode::SUCCESS
         }
@@ -235,6 +307,169 @@ fn disk_remove(drive: DriveLetter) -> ExitCode {
     }
 }
 
+fn trust_disk(drive: DriveLetter) -> ExitCode {
+    let inspection = diskconfig::inspect_drive(drive);
+    let DiskContent::Configured { config, hash } = &inspection.content else {
+        eprintln!("nothing to approve: {}", describe_inspection(&inspection));
+        return ExitCode::FAILURE;
+    };
+    let GameTarget::Exe(game) = &config.target else {
+        println!("{:?} is a Steam game: it needs no approval", config.name);
+        return ExitCode::SUCCESS;
+    };
+    let mut store = match TrustStore::load() {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!(
+                "could not read the approved configs ({}): {error}",
+                error.code()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    if store.is_trusted(hash) {
+        println!("{:?} is already approved", config.name);
+        return ExitCode::SUCCESS;
+    }
+    println!("The disk in {drive} wants to run:");
+    println!("  name:      {}", config.name);
+    println!("  program:   {}", game.path.display());
+    println!("  arguments: {:?}", game.args);
+    println!(
+        "  closes:    {}",
+        config.process.as_deref().unwrap_or("the program itself")
+    );
+    println!("  hash:      {hash}");
+    if !game.path.is_file() {
+        println!("  (the program does not exist on this PC)");
+    }
+    print!("Trust this disk? [y/N] ");
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    let _ = io::stdin().lock().read_line(&mut answer);
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        println!("not approved");
+        return ExitCode::SUCCESS;
+    }
+    store.add(hash, config);
+    match store.save() {
+        Ok(()) => {
+            println!("approved; remove and insert the disk to launch it");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("could not save the approval ({}): {error}", error.code());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn trust_list() -> ExitCode {
+    let store = match TrustStore::load() {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!(
+                "could not read the approved configs ({}): {error}",
+                error.code()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    if store.entries().is_empty() {
+        println!("no approved configs");
+    }
+    for entry in store.entries() {
+        println!(
+            "{}  {}  {:?}  {}",
+            &entry.hash[..12.min(entry.hash.len())],
+            entry.added,
+            entry.name,
+            entry.path
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+fn trust_revoke(prefix: &str) -> ExitCode {
+    let mut store = match TrustStore::load() {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!(
+                "could not read the approved configs ({}): {error}",
+                error.code()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let entry = match store.revoke(prefix) {
+        Ok(entry) => entry,
+        Err(RevokeError::NotFound) => {
+            eprintln!("no approved config starts with {prefix:?}");
+            return ExitCode::FAILURE;
+        }
+        Err(RevokeError::Ambiguous(count)) => {
+            eprintln!("{count} approved configs start with {prefix:?}; give more of the hash");
+            return ExitCode::FAILURE;
+        }
+    };
+    match store.save() {
+        Ok(()) => {
+            println!("revoked {:?} ({})", entry.name, entry.path);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("could not save ({}): {error}", error.code());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn describe_removal(settings: &Settings) -> String {
+    match settings.on_removal {
+        RemovalAction::Close => format!(
+            "ask the game to close, force it after {} s",
+            settings.close_timeout_s
+        ),
+        RemovalAction::Force => "force the game to close".to_owned(),
+        RemovalAction::Leave => "leave the game open".to_owned(),
+    }
+}
+
+fn describe_game_event(event: &GameEvent) -> String {
+    match event {
+        GameEvent::DiskRead { inspection, .. } => describe_inspection(inspection),
+        GameEvent::StartupDiskIgnored { name, .. } => {
+            format!("{name:?} not launched: the disk was already in the drive at startup")
+        }
+        GameEvent::Untrusted { name, .. } => format!(
+            "{name:?} not launched: this program is not approved (run `floppy-station trust`)"
+        ),
+        GameEvent::Launched { name, .. } => format!("launched {name:?}"),
+        GameEvent::LaunchFailed { name, error, .. } => {
+            format!("could not launch {name:?}: {error}")
+        }
+        GameEvent::LeftOpen { name, reason, .. } => {
+            format!("left {name:?} open ({})", reason.code())
+        }
+        GameEvent::Closing { name, mode, .. } => match mode {
+            CloseMode::Graceful(timeout) => format!(
+                "closing {name:?} (asking first, forcing after {} s)",
+                timeout.as_secs()
+            ),
+            CloseMode::Force => format!("forcing {name:?} to close"),
+        },
+        GameEvent::Closed { name, outcome, .. } => match outcome {
+            CloseOutcome::AlreadyClosed => format!("{name:?} was already closed"),
+            CloseOutcome::Closed => format!("{name:?} closed"),
+            CloseOutcome::Forced => format!("{name:?} forced to close"),
+            CloseOutcome::Failed { remaining } => format!(
+                "could not close {name:?}: {remaining} process(es) still running ({})",
+                outcome.code()
+            ),
+        },
+    }
+}
+
 fn describe_inspection(inspection: &DiskInspection) -> String {
     let content = match &inspection.content {
         DiskContent::Configured { config, .. } => {
@@ -247,7 +482,7 @@ fn describe_inspection(inspection: &DiskInspection) -> String {
         }
         DiskContent::UnsupportedKind(kind) => format!("unsupported kind {kind:?}"),
         DiskContent::Unformatted => "unformatted disk".to_owned(),
-        DiskContent::NoDisk => "no disk in the drive".to_owned(),
+        DiskContent::NoDisk => return "no disk in the drive".to_owned(),
         DiskContent::Unreadable(code) => match code {
             Some(code) => format!("unreadable disk (error {code})"),
             None => "unreadable disk".to_owned(),
