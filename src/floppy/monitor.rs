@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use windows::Win32::System::Diagnostics::Debug::{
@@ -284,10 +284,14 @@ fn update(
 }
 
 /// Background thread that polls the watched drives and sends
-/// [`FloppyEvent`]s through a channel. Stops when dropped.
+/// [`FloppyEvent`]s through a channel.
+///
+/// Dropping the monitor stops it without waiting for the thread: a check in
+/// progress can block for a long time (about 20 s on a USB floppy drive
+/// that was just plugged in), and it just finishes in the background.
 pub struct Monitor {
-    stop: Option<Sender<()>>,
-    thread: Option<JoinHandle<()>>,
+    // Dropping this sender is the stop signal.
+    _stop: Sender<()>,
 }
 
 impl Monitor {
@@ -296,7 +300,7 @@ impl Monitor {
     /// `events` is closed.
     pub fn spawn(mut poller: Poller, events: Sender<FloppyEvent>) -> io::Result<Self> {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let thread = thread::Builder::new()
+        thread::Builder::new()
             .name("floppy-monitor".into())
             .spawn(move || {
                 suppress_error_dialogs();
@@ -318,19 +322,7 @@ impl Monitor {
                     }
                 }
             })?;
-        Ok(Self {
-            stop: Some(stop_tx),
-            thread: Some(thread),
-        })
-    }
-}
-
-impl Drop for Monitor {
-    fn drop(&mut self) {
-        drop(self.stop.take());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        Ok(Self { _stop: stop_tx })
     }
 }
 
@@ -597,5 +589,26 @@ mod tests {
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), CONNECTED);
         drop(monitor); // must return promptly despite the 60 s interval
         assert!(rx.recv().is_err());
+    }
+
+    /// Probe whose checks take a long time, like a just-plugged drive.
+    struct SlowProbe;
+
+    impl MediaProbe for SlowProbe {
+        fn probe(&mut self, _drive: DriveLetter) -> ProbeResult {
+            thread::sleep(Duration::from_secs(2));
+            EMPTY
+        }
+    }
+
+    #[test]
+    fn dropping_monitor_does_not_wait_for_a_slow_check() {
+        let poller = Poller::new([A], Box::new(SlowProbe), INTERVALS);
+        let (tx, _rx) = mpsc::channel();
+        let monitor = Monitor::spawn(poller, tx).unwrap();
+        thread::sleep(Duration::from_millis(100)); // let the check start
+        let start = Instant::now();
+        drop(monitor);
+        assert!(start.elapsed() < Duration::from_millis(500));
     }
 }
