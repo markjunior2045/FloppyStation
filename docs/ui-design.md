@@ -4,9 +4,8 @@ Design of the Tauri app (stage B). It maps every state and code the library
 returns to what the user sees, so the frontend (phases 5 to 7) has a single
 reference. The UI can still change while it is built.
 
-Status of this document: **step 1 of 3** (inventory, flows and states).
-Wireframes (step 2) and the visual identity with a clickable mockup (step 3)
-come next.
+Status of this document: **step 2 of 3** (inventory, flows, states and
+wireframes). The visual identity with a clickable mockup (step 3) comes next.
 
 ## Decisions
 
@@ -330,6 +329,246 @@ in Preferences.
 
 The box (or Status) says the disk can't be read, with a hint to format it in
 File Explorer. Floppy Station never formats disks.
+
+## Wireframes
+
+Low fidelity: structure and content only, not the final look. The main
+window is drawn at about 760×520. `[ Button ]`, `( )` option, `[x]`
+checkbox, `[____]` text box, `[ ... v]` dropdown, `||||` progress bar.
+
+### Tray menu
+
+```
++-------------------------------------+
+|  A: Counter-Strike 2 (launched)     |  <- state line, disabled
+|-------------------------------------|
+|  Open Floppy Station                |  <- bold, default action
+|  [x] Detect disks                   |
+|-------------------------------------|
+|  Exit                               |
++-------------------------------------+
+```
+
+### Main window: Status
+
+Game launched from the disk:
+
+```
++==========================================================================+
+| [disk] Floppy Station                                         [_] [X]    |
++==========================================================================+
+|  [ Status ] [ Disk ] [ Approvals ] [ Preferences ]                       |
+| +----------------------------------------------------------------------+ |
+| |  +- Drive ---------------------------------------------------------+ | |
+| |  |  [drive icon]  A:  Disk in the drive                            | | |
+| |  +-----------------------------------------------------------------+ | |
+| |  +- Disk ----------------------------------------------------------+ | |
+| |  |  [disk icon]  Counter-Strike 2                                  | | |
+| |  |               Steam game 730 - closes cs2.exe                   | | |
+| |  |                                                   [ Edit... ]   | | |
+| |  +-----------------------------------------------------------------+ | |
+| |  +- Game ----------------------------------------------------------+ | |
+| |  |  Counter-Strike 2 launched.                                     | | |
+| |  |  Removing the disk asks it to close, and forces it after 10 s.  | | |
+| |  +-----------------------------------------------------------------+ | |
+| |                                                                      | |
+| |  [x] Detect disks                                                    | |
+| +----------------------------------------------------------------------+ |
+| A: disk in | Detection on                                                |
++==========================================================================+
+```
+
+Other states only change the boxes:
+
+```
+Drive not found                       Disk not configured
++- Drive -----------------------+     +- Disk -------------------------+
+| [!] Drive A: not found        |     | This disk has no game yet.     |
+| Plug the drive in, or pick    |     |                                |
+| another letter in             |     |        [ Configure this disk ] |
+| Preferences. [ Preferences ]  |     +--------------------------------+
++-------------------------------+
+
+Reading                               Unapproved program
++- Disk ------------------------+     +- Disk -------------------------+
+| Reading floppy disk...        |     | [!] Character Map              |
+| [ ||||   ||||              ]  |     | This disk wants to run a       |
++-------------------------------+     | program you haven't approved.  |
+                                      |                 [ Review... ]  |
+                                      +--------------------------------+
+```
+
+A problem with the local files shows as a banner above the boxes:
+
+```
+| [!] The settings file is damaged; default settings are in use.     [x] |
+```
+
+### Main window: Status, first run
+
+```
+| +----------------------------------------------------------------------+ |
+| |  Welcome to Floppy Station                                           | |
+| |  Insert a disk to play, remove it to close the game.                 | |
+| |                                                                      | |
+| |  1. Pick your floppy drive:    [ A: (removable)          v]          | |
+| |                                                                      | |
+| |  2. Insert a disk.             Waiting for a disk...                 | |
+| |                                (then: "This disk has no game yet."   | |
+| |                                 [ Configure this disk ])             | |
+| |                                                                      | |
+| |                                                         [ Done ]     | |
+| +----------------------------------------------------------------------+ |
+```
+
+### Main window: Disk
+
+Steam game:
+
+```
+| +----------------------------------------------------------------------+ |
+| |  +- Disk in A: ----------------------------------------------------+ | |
+| |  |  This disk has no game yet.                                     | | |
+| |  +-----------------------------------------------------------------+ | |
+| |  +- Game ----------------------------------------------------------+ | |
+| |  |  Type:     [ Steam game                       v]                | | |
+| |  |  Game:     [ search...                          ]               | | |
+| |  |            +------------------------------------+               | | |
+| |  |            | Counter-Strike 2              730  |               | | |
+| |  |            | Tabletop Simulator         286160  |               | | |
+| |  |            | ...                                |               | | |
+| |  |            +------------------------------------+               | | |
+| |  |  Name:     [ Counter-Strike 2                   ]               | | |
+| |  |  Close:    [ cs2.exe                ] [ Pick... ]               | | |
+| |  +-----------------------------------------------------------------+ | |
+| |  [ Preview... ]                                 [ Write to disk ]    | |
+| +----------------------------------------------------------------------+ |
+```
+
+Program (only the game box changes):
+
+```
+| |  |  Type:      [ Program                         v]                | | |
+| |  |  Program:   [ C:\Games\Doom\doom.exe         ] [ Browse... ]    | | |
+| |  |  Arguments: [ -fullscreen                     ]                 | | |
+| |  |  Name:      [ Doom                            ]                 | | |
+| |  |  Close:     [                     ] [ Pick... ]                 | | |
+| |  |             Empty: closes the program itself.                   | | |
+```
+
+Steam game without a process:
+
+```
+| |  |  Close:    [                     ] [ Pick... ]                  | | |
+| |  |  [!] The game won't be closed when the disk is removed.         | | |
+```
+
+Process picker (a small XP dialog over the window):
+
+```
++== Pick the process to close ==================[X]+
+|  Open applications:                              |
+|  +--------------------------------------------+  |
+|  | cs2.exe                                    |  |
+|  | steam.exe                                  |  |
+|  | ...                                        |  |
+|  +--------------------------------------------+  |
+|  Tip: start the game first, then pick it here.   |
+|                              [ OK ]  [ Cancel ]  |
++==================================================+
+```
+
+Writing, then the result:
+
+```
+| |  Writing to the disk...                                              | |
+| |  [ ||||||||||||                                                  ]   | |
+
+| |  [i] Written to the disk. Remove and insert it to play.              | |
+| |  [!] The disk is write protected. Slide the tab and try again.       | |
+```
+
+No disk in the drive:
+
+```
+| +----------------------------------------------------------------------+ |
+| |                                                                      | |
+| |               [disk icon]  Insert a disk to configure it.            | |
+| |                                                                      | |
+| +----------------------------------------------------------------------+ |
+```
+
+### Main window: Approvals
+
+```
+| +----------------------------------------------------------------------+ |
+| |  +- Disk in A: wants to run ---------------------------------------+ | |
+| |  |  [!] Character Map                                              | | |
+| |  |  Program:    C:\Windows\System32\charmap.exe                    | | |
+| |  |  Arguments:  (none)                                             | | |
+| |  |  Closes:     the program itself                                 | | |
+| |  |  Only approve programs you trust.  [ Approve ]  [ Not now ]     | | |
+| |  +-----------------------------------------------------------------+ | |
+| |  Approved programs:                                                  | |
+| |  +-----------------------------------------------------------------+ | |
+| |  | Name            | Program                        | Approved     | | |
+| |  |-----------------+--------------------------------+--------------| | |
+| |  | Notepad         | C:\Windows\System32\notepad... | 2026-10-27   | | |
+| |  | Doom            | C:\Games\Doom\doom.exe         | 2026-10-28   | | |
+| |  +-----------------------------------------------------------------+ | |
+| |                                                     [ Revoke ]       | |
+| +----------------------------------------------------------------------+ |
+```
+
+The top box only shows when the disk in the drive holds an unapproved
+program.
+
+### Main window: Preferences
+
+```
+| +----------------------------------------------------------------------+ |
+| |  +- Drive ---------------------+  +- When the disk is removed -----+ | |
+| |  |  Drive: [ A: (removable) v] |  |  (o) Ask the game to close,    | | |
+| |  +-----------------------------+  |      force it after [10] s     | | |
+| |  +- Detection -----------------+  |  ( ) Force it to close         | | |
+| |  |  [x] Detect disks           |  |  ( ) Leave it open             | | |
+| |  |  Check every:               |  +--------------------------------+ | |
+| |  |   disk in     [ 1000 ] ms   |  +- When the drive is unplugged --+ | |
+| |  |   empty drive [ 1000 ] ms   |  |  (o) Same as removing the disk | | |
+| |  |   An empty drive clicks on  |  |  ( ) Leave the game open       | | |
+| |  |   every check.              |  +--------------------------------+ | |
+| |  +-----------------------------+  +- Display and startup ---------+ | |
+| |                                   |  [x] Show the loading box      | | |
+| |                                   |  [ ] Start with Windows        | | |
+| |                                   +--------------------------------+ | |
+| +----------------------------------------------------------------------+ |
+```
+
+### Loading box
+
+```
++== Floppy Station ===================+
+|                                     |
+|  Reading floppy disk...             |
+|  [ ||||   ||||   ||||             ] |  <- indeterminate
+|                                     |
++=====================================+
+```
+
+With a message (the bar is replaced, a button appears):
+
+```
++== Floppy Station =================[X]+
+|  [i] This disk has no game yet.      |
+|                       [ Configure ]  |
++======================================+
+
++== Floppy Station =================[X]+
+|  [!] This disk wants to run a        |
+|      program you haven't approved.   |
+|                          [ Review ]  |
++======================================+
+```
 
 ## Backend additions needed
 
