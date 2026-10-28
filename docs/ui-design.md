@@ -89,6 +89,10 @@ shows "Insert a disk to configure it".
   5. **Preview** of the file that will be written (read only).
   6. **Write to disk**.
 - Editing a configured disk fills the form with its values.
+- A write protected disk can't be configured or edited: *Configure this
+  disk*, *Edit* and the form are disabled, with "This disk is write
+  protected: slide the tab to change it." The loading box's *Configure*
+  button is disabled the same way.
 - Writing a program also approves it on this PC.
 
 #### Approvals tab
@@ -623,6 +627,10 @@ For phases 5 to 7.
   backend (see [Backend additions needed](#backend-additions-needed)).
 - **XP.css 0.2.6**, pinned, from npm. Its CSS is imported once; the app's own
   styles only lay out and override the font.
+- **Indeterminate progress bar**: XP.css animates `<progress>` without a value
+  with pseudo-elements that Chromium, and so WebView2, leaves still (three
+  green blocks that don't move). The app uses its own `.marquee` element with
+  the same look, as in the mockup.
 - **Main window**: Tauri window with `decorations: false`. The XP title bar is
   HTML with `data-tauri-drag-region`; its buttons call minimize and close.
   Transparent background so the title bar's rounded corners show.

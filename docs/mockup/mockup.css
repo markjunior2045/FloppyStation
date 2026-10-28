@@ -301,6 +301,44 @@ progress {
   width: 100%;
 }
 
+/* XP's indeterminate progress bar: three green blocks sliding through. */
+.marquee {
+  position: relative;
+  height: 14px;
+  border: 1px solid #686868;
+  border-radius: 3px;
+  background: #fff;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.marquee span {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: -30px;
+  width: 28px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 8px, #fff 8px 10px),
+    linear-gradient(180deg, #acedad 0, #7be47d 14%, #4cda50 28%, #2ed330 42%, #42d845 57%, #76e275 71%, #8fe791 85%, #fff);
+  animation: marquee 2s linear infinite;
+}
+
+@keyframes marquee {
+  from {
+    left: -30px;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee span {
+    animation-duration: 6s;
+  }
+}
+
 /* Approvals table */
 
 .table-wrap {

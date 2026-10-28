@@ -276,13 +276,18 @@ function showBox(kind) {
   clearTimeout(timers.box);
   if (kind === "reading") {
     controls.innerHTML = "";
-    body.innerHTML = `<p style="margin:0 0 8px">Reading floppy disk...</p><progress></progress>`;
+    body.innerHTML = `<p style="margin:0 0 8px">Reading floppy disk...</p>${marquee()}`;
   } else {
     const m = BOX[kind];
     controls.innerHTML = `<button aria-label="Close" data-action="hide-box"></button>`;
     const icon = m.icon === "warn" ? warnIcon() : infoIcon();
-    const button = m.button ? `<div class="actions"><button data-action="box-open" data-tab="${m.tab}">${m.button}</button></div>` : "";
-    body.innerHTML = `<div class="message">${icon}<span>${escape(m.text)}</span></div>${button}`;
+    // A write protected disk can't be configured.
+    const locked = kind === "blank" && disk() && disk().writeProtected;
+    const note = locked ? `<br><span class="muted">It is write protected: slide the tab to configure it.</span>` : "";
+    const button = m.button
+      ? `<div class="actions"><button data-action="box-open" data-tab="${m.tab}" ${locked ? "disabled" : ""}>${m.button}</button></div>`
+      : "";
+    body.innerHTML = `<div class="message">${icon}<span>${escape(m.text)}${note}</span></div>${button}`;
     timers.box = setTimeout(hideBox, MESSAGE_CLOSE_MS);
   }
   box.hidden = false;
@@ -380,10 +385,14 @@ function renderDiskSummary(withActions) {
     return `<div class="muted">No disk.</div>`;
   }
   if (state.reading) {
-    return `<div>Reading floppy disk...</div><progress style="margin-top:6px"></progress>`;
+    return `<div style="margin-bottom:6px">Reading floppy disk...</div>${marquee()}`;
   }
-  const action = (label, tab) =>
-    withActions ? `<span style="flex:1"></span><button data-action="tab" data-tab="${tab}">${label}</button>` : "";
+  // Configuring or editing writes to the disk: not possible while it is
+  // write protected.
+  const action = (label, tab, writes = false) =>
+    withActions
+      ? `<span style="flex:1"></span><button data-action="tab" data-tab="${tab}" ${writes && d.writeProtected ? "disabled" : ""}>${label}</button>`
+      : "";
   const protectedNote = d.writeProtected
     ? `<div class="muted" style="margin-top:4px">This disk is write protected: slide the tab to change it.</div>`
     : "";
@@ -397,10 +406,10 @@ function renderDiskSummary(withActions) {
       }
       return `<div class="row"><img class="big-icon" src="icon.svg" alt=""><div>
         <div class="title">${escape(c.name)}</div>
-        <div>${escape(describeTarget(c))} - ${escape(describeClose(c))}</div></div>${action("Edit...", "disk")}</div>${protectedNote}`;
+        <div>${escape(describeTarget(c))} - ${escape(describeClose(c))}</div></div>${action("Edit...", "disk", true)}</div>${protectedNote}`;
     }
     case "not_configured":
-      return `<div class="row"><img class="big-icon" src="icon.svg" alt=""><div>This disk has no game yet.</div>${action("Configure this disk", "disk")}</div>${protectedNote}`;
+      return `<div class="row"><img class="big-icon" src="icon.svg" alt=""><div>This disk has no game yet.</div>${action("Configure this disk", "disk", true)}</div>${protectedNote}`;
     case "unreadable":
       return `<div class="row"><img class="big-icon" src="icon.svg" alt="" style="opacity:.5"><div>
         <div class="title warn">This disk can't be read. It may be damaged.</div>
@@ -482,7 +491,7 @@ function renderDisk() {
     return `<fieldset><legend>Disk in ${state.prefs.drive}</legend>${renderDiskSummary(false)}</fieldset>`;
   }
   const f = state.form;
-  const disabled = state.writing ? "disabled" : "";
+  const disabled = state.writing || d.writeProtected ? "disabled" : "";
   let fields;
   if (f.kind === "steam") {
     const items = LIBRARY.filter((g) => g.name.toLowerCase().includes(f.search.toLowerCase()))
@@ -499,11 +508,11 @@ function renderDisk() {
   const processHint = `<span></span><span id="process-hint">${processHintHtml()}</span>`;
 
   const current = `<fieldset><legend>Disk in ${state.prefs.drive}</legend>
-      <div class="row">${renderDiskSummary(false)}<span style="flex:1"></span>
+      <div class="row"><div>${renderDiskSummary(false)}</div><span style="flex:1"></span>
       ${d.content === "configured" ? `<button data-action="remove-config" ${disabled}>Remove configuration</button>` : ""}</div></fieldset>`;
 
   const writing = state.writing
-    ? `<div style="margin-top:8px">Writing to the disk...</div><progress></progress>`
+    ? `<div style="margin:8px 0 4px">Writing to the disk...</div>${marquee()}`
     : "";
   const result = state.writeResult
     ? `<div class="result ${state.writeResult.ok ? "ok" : "warn"}">${state.writeResult.ok ? "" : warnIconSmall() + " "}${escape(state.writeResult.text)}</div>`
@@ -626,6 +635,12 @@ function renderPrefs() {
       </fieldset>
     </div>
   </div>`;
+}
+
+// XP's indeterminate progress bar. XP.css animates it with pseudo-elements
+// that Chromium (and so WebView2) doesn't animate on <progress>.
+function marquee() {
+  return `<div class="marquee" role="progressbar" aria-label="Working"><span></span></div>`;
 }
 
 function warnIconSmall() {
@@ -824,6 +839,7 @@ document.addEventListener("click", (event) => {
       state.windowOpen = true;
       break;
     case "pick-game": {
+      if (state.writing || disk().writeProtected) return;
       const game = LIBRARY.find((g) => g.appId === Number(target.dataset.app));
       state.form.appId = game.appId;
       state.form.name = game.name;
