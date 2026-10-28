@@ -38,8 +38,12 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             watcher::recent_events,
-            watcher::app_info,
+            watcher::app_state,
+            watcher::app_version,
+            watcher::get_settings,
+            watcher::save_settings,
             watcher::set_detection,
+            watcher::removable_drives,
             watcher::loading_box_state,
             watcher::close_loading_box,
             watcher::open_main_window,

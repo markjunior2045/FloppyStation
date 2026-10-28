@@ -69,6 +69,67 @@ body {
   margin: 0 3px;
 }
 
+fieldset {
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row.spread {
+  justify-content: space-between;
+}
+
+.title {
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.big-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: #fff8d6;
+  border: 1px solid #d8c06a;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+}
+
+/* A drive, drawn in CSS. */
+.drive-icon {
+  width: 32px;
+  height: 22px;
+  flex: none;
+  border: 1px solid #6b6b6b;
+  border-radius: 2px;
+  background: linear-gradient(#f2f2f2, #c8c8c8);
+  position: relative;
+}
+
+.drive-icon::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 9px;
+  height: 3px;
+  background: #3a3a3a;
+}
+
+.drive-icon.missing {
+  opacity: 0.45;
+}
+
 .muted {
   color: var(--muted);
 }

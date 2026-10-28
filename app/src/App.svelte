@@ -1,114 +1,101 @@
 <script lang="ts">
-  // Phase 5 shell: the XP window with the list of what the app does, to show
-  // the logic running inside Tauri. The tabs come in phase 7.
-  import { invoke } from "@tauri-apps/api/core";
+  // The main window: the XP frame with the Status, Disk, Approvals and
+  // Preferences tabs. The backend sends the current state on every change.
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
-  import type { AppEvent, AppInfo } from "./lib/events";
+  import { api, type AppEvent, type AppState, type Settings } from "./lib/api";
   import { t } from "./lib/i18n";
   import TitleBar from "./lib/TitleBar.svelte";
+  import PreferencesTab from "./tabs/PreferencesTab.svelte";
+  import StatusTab from "./tabs/StatusTab.svelte";
 
+  type Tab = "status" | "disk" | "approvals" | "prefs";
+
+  const TABS: Tab[] = ["status", "disk", "approvals", "prefs"];
   const MAX_EVENTS = 200;
 
+  let tab: Tab = $state("status");
+  let appState: AppState | null = $state(null);
+  let settings: Settings | null = $state(null);
   let events: AppEvent[] = $state([]);
-  let info: AppInfo | null = $state(null);
-  let list: HTMLElement | undefined = $state();
+  let version = $state("");
+  let panel: HTMLElement | undefined = $state();
 
   onMount(() => {
-    let unlisten: (() => void) | undefined;
+    const unlisten: (() => void)[] = [];
     (async () => {
       // Listen first, then fetch what happened before the window opened;
       // `seq` drops the events received both ways.
-      unlisten = await listen<AppEvent>("app-event", (event) => {
-        add([event.payload]);
-        if (event.payload.code.startsWith("detection_") && info) {
-          info.detection = event.payload.code === "detection_on";
-        }
-      });
-      add(await invoke<AppEvent[]>("recent_events"));
-      info = await invoke<AppInfo>("app_info");
+      unlisten.push(await listen<AppState>("app-state", (event) => (appState = event.payload)));
+      unlisten.push(await listen<AppEvent>("app-event", (event) => addEvents([event.payload])));
+      addEvents(await api.recentEvents());
+      appState = await api.state();
+      settings = await api.settings();
+      version = await api.version();
     })();
-    return () => unlisten?.();
+    return () => unlisten.forEach((stop) => stop());
   });
 
-  async function add(incoming: AppEvent[]) {
+  function addEvents(incoming: AppEvent[]) {
     const known = new Set(events.map((event) => event.seq));
     const fresh = incoming.filter((event) => !known.has(event.seq));
     if (fresh.length === 0) return;
     events = [...events, ...fresh].sort((a, b) => a.seq - b.seq).slice(-MAX_EVENTS);
+    // Detection or the drive may have changed from the tray.
+    if (fresh.some((event) => event.code.startsWith("detection_"))) {
+      api.settings().then((loaded) => (settings = loaded));
+    }
+  }
+
+  async function openTab(next: Tab) {
+    tab = next;
     await tick();
-    list?.scrollTo({ top: list.scrollHeight });
-  }
-
-  function setDetection(enabled: boolean) {
-    invoke("set_detection", { enabled });
-  }
-
-  function time(at: number): string {
-    return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    panel?.scrollTo({ top: 0 });
   }
 </script>
 
 <div class="window app-window">
   <TitleBar title={t("ui.title")} />
   <div class="window-body">
-    <p class="intro">{t("ui.events.intro")}</p>
-    <div class="events" bind:this={list}>
-      {#each events as event (event.seq)}
-        <div class="event">
-          <span class="time muted">{time(event.at)}</span>
-          <span>{t(event.code, event.params)}</span>
-        </div>
-      {:else}
-        <div class="muted">{t("ui.events.empty")}</div>
+    <menu role="tablist">
+      {#each TABS as name (name)}
+        <button role="tab" aria-selected={tab === name} onclick={() => openTab(name)}>
+          {t(`ui.tab.${name}`)}
+        </button>
       {/each}
+    </menu>
+    <div role="tabpanel" bind:this={panel}>
+      {#if !appState || !settings}
+        <div class="muted">{t("ui.loading")}</div>
+      {:else if tab === "status"}
+        <StatusTab app={appState} {settings} {events} {openTab} />
+      {:else if tab === "prefs"}
+        <PreferencesTab {settings} detection={appState.detection} onSaved={(saved) => (settings = saved)} />
+      {:else}
+        <div class="coming-soon muted">{t("ui.coming_soon")}</div>
+      {/if}
     </div>
-    {#if info}
-      <div class="field-row detect">
-        <input
-          type="checkbox"
-          id="detect"
-          checked={info.detection}
-          onchange={(event) => setDetection(event.currentTarget.checked)}
-        />
-        <label for="detect">{t("ui.detect")}</label>
-      </div>
-    {/if}
   </div>
   <div class="status-bar">
-    <p class="status-bar-field">{info ? t("ui.status.watching", { drive: info.drive }) : ""}</p>
+    <p class="status-bar-field">{appState?.line ?? ""}</p>
     <p class="status-bar-field">
-      {info ? t(info.detection ? "ui.status.detection_on" : "ui.status.detection_off") : ""}
+      {appState ? t(appState.detection ? "ui.status.detection_on" : "ui.status.detection_off") : ""}
     </p>
-    <p class="status-bar-field">{info ? t("ui.status.version", { version: info.version }) : ""}</p>
+    <p class="status-bar-field">{version ? t("ui.status.version", { version }) : ""}</p>
   </div>
 </div>
 
 <style>
-  .intro {
-    margin: 0 0 6px;
-  }
-
-  .events {
+  [role="tabpanel"] {
     flex: 1;
     overflow: auto;
-    background: #fff;
-    border: 1px solid #7f9db9;
-    padding: 4px 6px;
+    margin-bottom: 0;
   }
 
-  .detect {
-    margin-top: 8px;
-  }
-
-  .event {
+  .coming-soon {
     display: flex;
-    gap: 10px;
-    padding: 1px 0;
-  }
-
-  .time {
-    flex: none;
-    font-variant-numeric: tabular-nums;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
   }
 </style>

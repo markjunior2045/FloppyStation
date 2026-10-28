@@ -12,22 +12,23 @@ use std::time::Duration;
 use floppy_station_core::controller::{Controller, GameEvent, System};
 use floppy_station_core::diskconfig::DiskContent;
 use floppy_station_core::floppy::{
-    DriveLetter, FloppyEvent, InsertOrigin, Monitor, Poller, ProbeKind,
+    self, DriveLetter, FloppyEvent, InsertOrigin, Monitor, Poller, ProbeKind,
 };
 use floppy_station_core::launcher::LaunchError;
 use floppy_station_core::settings::Settings;
-use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::events::{self, AppEvent};
 use crate::tray::Tray;
-use crate::view::DriveView;
+use crate::view::{AppState, DriveView};
 use crate::windows::{self, BoxState, LoadingBox};
 
 /// Events kept for a window opened later.
 const RECENT_EVENTS: usize = 200;
 /// Name of the Tauri event carrying an [`AppEvent`].
 const EVENT_NAME: &str = "app-event";
+/// Name of the Tauri event carrying the [`AppState`].
+const STATE_NAME: &str = "app-state";
 /// How long the loading box stays after a game is launched: the app doesn't
 /// know when the game finishes opening.
 const BOX_AFTER_LAUNCH: Duration = Duration::from_secs(3);
@@ -43,6 +44,10 @@ pub struct Watcher {
 struct Inner {
     app: AppHandle,
     settings: Mutex<Settings>,
+    /// Settings changed since the controller last handled an event.
+    controller_settings: Mutex<Option<Settings>>,
+    /// Problem loading the settings at startup, as a code.
+    settings_error: Option<&'static str>,
     detection: AtomicBool,
     /// Present while detection is on; dropping it stops checking the drive.
     monitor: Mutex<Option<Monitor>>,
@@ -71,6 +76,8 @@ impl Watcher {
                 detection: AtomicBool::new(settings.detection_enabled),
                 view: Mutex::new(DriveView::new(settings.drive, settings.detection_enabled)),
                 settings: Mutex::new(settings.clone()),
+                controller_settings: Mutex::new(None),
+                settings_error: error.as_ref().map(|error| error.code()),
                 monitor: Mutex::new(None),
                 floppy_tx,
                 log: Mutex::new(EventLog::default()),
@@ -98,10 +105,14 @@ impl Watcher {
                 let mut controller = Controller::new(System, &settings, game_tx);
                 for event in floppy_rx {
                     // A monitor being stopped may still report a last check.
-                    if this.detection() {
-                        this.on_floppy(&event);
-                        controller.handle(&event);
+                    if !this.detection() {
+                        continue;
                     }
+                    if let Some(settings) = lock(&this.inner.controller_settings).take() {
+                        controller.update_settings(&settings);
+                    }
+                    this.on_floppy(&event);
+                    controller.handle(&event);
                 }
             })?;
 
@@ -117,38 +128,66 @@ impl Watcher {
         self.inner.detection.load(Ordering::SeqCst)
     }
 
-    pub fn drive(&self) -> DriveLetter {
-        lock(&self.inner.settings).drive
+    pub fn settings(&self) -> Settings {
+        lock(&self.inner.settings).clone()
     }
 
-    /// Turns detection on or off and saves the choice. Off, the drive isn't
-    /// checked at all. Turned back on, a disk already in the drive is treated
-    /// like one present when the app starts: its game isn't launched.
+    /// Turns detection on or off and saves the choice.
     pub fn set_detection(&self, enabled: bool) {
-        if self.detection() == enabled {
-            return;
+        let settings = Settings {
+            detection_enabled: enabled,
+            ..self.settings()
+        };
+        if let Err(code) = self.save_settings(settings) {
+            log::warn!("could not save the settings ({code})");
         }
-        self.inner.detection.store(enabled, Ordering::SeqCst);
-        {
-            let mut settings = lock(&self.inner.settings);
-            settings.detection_enabled = enabled;
-            let saved = Settings::default_path().and_then(|path| settings.save_to(&path));
-            if let Err(error) = saved {
-                log::warn!("could not save the settings ({}): {error}", error.code());
-                drop(settings);
-                self.record(events::from_settings_error(&error));
-            }
+    }
+
+    /// Saves new settings and applies them right away:
+    /// - Detection off stops checking the drive. Turned back on, a disk
+    ///   already in the drive is treated like one present when the app
+    ///   starts: its game isn't launched.
+    /// - Another drive starts watching it from scratch.
+    /// - New intervals apply from the next check.
+    /// - What to do with games applies from the next disk removal.
+    pub fn save_settings(&self, mut new: Settings) -> Result<(), &'static str> {
+        new.normalize();
+        let old = self.settings();
+        if new == old {
+            return Ok(());
         }
-        lock(&self.inner.view).set_detection(enabled);
-        if enabled {
-            if let Err(error) = self.start_monitor() {
-                log::error!("could not start the drive monitor: {error}");
-            }
-        } else {
+        let path = Settings::default_path().map_err(|error| error.code())?;
+        new.save_to(&path).map_err(|error| error.code())?;
+        *lock(&self.inner.settings) = new.clone();
+        *lock(&self.inner.controller_settings) = Some(new.clone());
+
+        let detection_changed = new.detection_enabled != old.detection_enabled;
+        let drive_changed = new.drive != old.drive;
+        self.inner
+            .detection
+            .store(new.detection_enabled, Ordering::SeqCst);
+        if detection_changed || drive_changed {
             lock(&self.inner.monitor).take();
-            self.inner.app.state::<LoadingBox>().close(&self.inner.app);
+            lock(&self.inner.view).reset(new.drive, new.detection_enabled);
+            if new.detection_enabled {
+                if let Err(error) = self.start_monitor() {
+                    log::error!("could not start the drive monitor: {error}");
+                }
+            } else {
+                self.inner.app.state::<LoadingBox>().close(&self.inner.app);
+            }
+        } else if new.poll_intervals() != old.poll_intervals()
+            && let Some(monitor) = lock(&self.inner.monitor).as_ref()
+        {
+            monitor.set_intervals(new.poll_intervals());
         }
-        self.record(events::detection(enabled));
+
+        if detection_changed {
+            self.record(events::detection(new.detection_enabled));
+        } else {
+            self.publish_state();
+        }
+        Ok(())
     }
 
     /// The tray line for the current state.
@@ -156,8 +195,12 @@ impl Watcher {
         lock(&self.inner.view).line()
     }
 
+    pub fn state(&self) -> AppState {
+        lock(&self.inner.view).state(self.inner.settings_error)
+    }
+
     fn start_monitor(&self) -> std::io::Result<()> {
-        let settings = lock(&self.inner.settings).clone();
+        let settings = self.settings();
         let poller = Poller::new(
             [settings.drive],
             ProbeKind::default().create(),
@@ -175,7 +218,8 @@ impl Watcher {
         let loading = app.state::<LoadingBox>();
         match event {
             FloppyEvent::MediaInserted { origin, .. }
-                if *origin != InsertOrigin::PresentAtStartup && self.show_loading_box() =>
+                if *origin != InsertOrigin::PresentAtStartup
+                    && self.settings().show_loading_box =>
             {
                 loading.show(app, BoxState::READING, None);
             }
@@ -217,12 +261,8 @@ impl Watcher {
         }
     }
 
-    fn show_loading_box(&self) -> bool {
-        lock(&self.inner.settings).show_loading_box
-    }
-
     /// Numbers the event, keeps it for windows opened later, sends it to the
-    /// open ones and updates the tray.
+    /// open ones and updates the window's state and the tray.
     fn record(&self, mut event: AppEvent) {
         {
             let mut log = lock(&self.inner.log);
@@ -234,10 +274,16 @@ impl Watcher {
             log.recent.push_back(event.clone());
         }
         log::info!("{} {:?}", event.code, event.params);
-        let app = &self.inner.app;
-        if let Err(error) = app.emit(EVENT_NAME, &event) {
+        if let Err(error) = self.inner.app.emit(EVENT_NAME, &event) {
             log::warn!("could not send {} to the UI: {error}", event.code);
         }
+        self.publish_state();
+    }
+
+    /// Sends the current state to the window and the tray.
+    fn publish_state(&self) {
+        let app = &self.inner.app;
+        let _ = app.emit(STATE_NAME, self.state());
         // The tray doesn't exist yet while the app starts.
         if let Some(tray) = app.try_state::<Tray>() {
             tray.update(&self.line(), self.detection());
@@ -259,25 +305,42 @@ pub fn recent_events(watcher: State<'_, Watcher>) -> Vec<AppEvent> {
     watcher.recent()
 }
 
-#[derive(Serialize)]
-pub struct AppInfo {
-    drive: String,
-    version: &'static str,
-    detection: bool,
+#[tauri::command]
+pub fn app_state(watcher: State<'_, Watcher>) -> AppState {
+    watcher.state()
 }
 
 #[tauri::command]
-pub fn app_info(watcher: State<'_, Watcher>) -> AppInfo {
-    AppInfo {
-        drive: watcher.drive().to_string(),
-        version: env!("CARGO_PKG_VERSION"),
-        detection: watcher.detection(),
-    }
+pub fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
+pub fn get_settings(watcher: State<'_, Watcher>) -> Settings {
+    watcher.settings()
+}
+
+/// Saves and applies the settings; fails with a `settings_*` code.
+#[tauri::command]
+pub fn save_settings(watcher: State<'_, Watcher>, settings: Settings) -> Result<(), &'static str> {
+    watcher.save_settings(settings)
 }
 
 #[tauri::command]
 pub fn set_detection(watcher: State<'_, Watcher>, enabled: bool) {
     watcher.set_detection(enabled);
+}
+
+/// The removable drives, plus the watched drive even if it isn't plugged in.
+#[tauri::command]
+pub fn removable_drives(watcher: State<'_, Watcher>) -> Vec<String> {
+    let mut drives = floppy::removable_drives();
+    let current: DriveLetter = watcher.settings().drive;
+    if !drives.contains(&current) {
+        drives.push(current);
+        drives.sort();
+    }
+    drives.iter().map(ToString::to_string).collect()
 }
 
 /// What the loading box shows; `None` once it should close.

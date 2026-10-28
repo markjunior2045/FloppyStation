@@ -115,7 +115,7 @@ fn game(code: &'static str, drive: impl ToString, name: &str) -> AppEvent {
     AppEvent::new(code).with("drive", drive).with("name", name)
 }
 
-fn from_content(content: &DiskContent) -> AppEvent {
+pub fn from_content(content: &DiskContent) -> AppEvent {
     let event = AppEvent::new(content.code());
     match content {
         DiskContent::Configured { config, hash } => {
