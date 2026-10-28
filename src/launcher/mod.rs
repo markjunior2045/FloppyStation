@@ -149,17 +149,25 @@ impl RunningGame {
         {
             log::warn!("could not terminate the game's job: {error}");
         }
-        for process in processes.iter().filter(|process| process.is_running()) {
-            if let Err(code) = process.terminate() {
-                log::warn!("could not terminate process {} (error {code})", process.pid);
-            }
-        }
-        process::wait_all(&processes, FORCE_WAIT);
-        match processes
+        // Processes already ending (for example, with the job) refuse to be
+        // terminated; that is only worth a warning if they stay open.
+        let errors: Vec<(u32, u32)> = processes
             .iter()
             .filter(|process| process.is_running())
-            .count()
-        {
+            .filter_map(|process| process.terminate().err().map(|code| (process.pid, code)))
+            .collect();
+        process::wait_all(&processes, FORCE_WAIT);
+        let remaining: Vec<&Process> = processes
+            .iter()
+            .filter(|process| process.is_running())
+            .collect();
+        for process in &remaining {
+            match errors.iter().find(|(pid, _)| *pid == process.pid) {
+                Some((pid, code)) => log::warn!("could not terminate process {pid} (error {code})"),
+                None => log::warn!("process {} is still running", process.pid),
+            }
+        }
+        match remaining.len() {
             0 => CloseOutcome::Forced,
             remaining => CloseOutcome::Failed { remaining },
         }
