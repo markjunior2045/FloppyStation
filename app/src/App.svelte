@@ -19,7 +19,12 @@
     (async () => {
       // Listen first, then fetch what happened before the window opened;
       // `seq` drops the events received both ways.
-      unlisten = await listen<AppEvent>("app-event", (event) => add([event.payload]));
+      unlisten = await listen<AppEvent>("app-event", (event) => {
+        add([event.payload]);
+        if (event.payload.code.startsWith("detection_") && info) {
+          info.detection = event.payload.code === "detection_on";
+        }
+      });
       add(await invoke<AppEvent[]>("recent_events"));
       info = await invoke<AppInfo>("app_info");
     })();
@@ -33,6 +38,10 @@
     events = [...events, ...fresh].sort((a, b) => a.seq - b.seq).slice(-MAX_EVENTS);
     await tick();
     list?.scrollTo({ top: list.scrollHeight });
+  }
+
+  function setDetection(enabled: boolean) {
+    invoke("set_detection", { enabled });
   }
 
   function time(at: number): string {
@@ -54,9 +63,23 @@
         <div class="muted">{t("ui.events.empty")}</div>
       {/each}
     </div>
+    {#if info}
+      <div class="field-row detect">
+        <input
+          type="checkbox"
+          id="detect"
+          checked={info.detection}
+          onchange={(event) => setDetection(event.currentTarget.checked)}
+        />
+        <label for="detect">{t("ui.detect")}</label>
+      </div>
+    {/if}
   </div>
   <div class="status-bar">
     <p class="status-bar-field">{info ? t("ui.status.watching", { drive: info.drive }) : ""}</p>
+    <p class="status-bar-field">
+      {info ? t(info.detection ? "ui.status.detection_on" : "ui.status.detection_off") : ""}
+    </p>
     <p class="status-bar-field">{info ? t("ui.status.version", { version: info.version }) : ""}</p>
   </div>
 </div>
@@ -72,6 +95,10 @@
     background: #fff;
     border: 1px solid #7f9db9;
     padding: 4px 6px;
+  }
+
+  .detect {
+    margin-top: 8px;
   }
 
   .event {

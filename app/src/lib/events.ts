@@ -13,4 +13,5 @@ export interface AppEvent {
 export interface AppInfo {
   drive: string;
   version: string;
+  detection: boolean;
 }

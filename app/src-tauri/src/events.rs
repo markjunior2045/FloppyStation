@@ -98,6 +98,15 @@ pub fn from_game(event: &GameEvent) -> AppEvent {
     }
 }
 
+/// Detection turned on or off.
+pub fn detection(enabled: bool) -> AppEvent {
+    AppEvent::new(if enabled {
+        "detection_on"
+    } else {
+        "detection_off"
+    })
+}
+
 pub fn from_settings_error(error: &SettingsError) -> AppEvent {
     AppEvent::new(error.code()).with("detail", error)
 }
@@ -258,6 +267,8 @@ mod tests {
             });
         }
         floppy.extend(games.iter().map(from_game));
+        floppy.push(detection(true));
+        floppy.push(detection(false));
         floppy.push(from_settings_error(&SettingsError::AppDataUnavailable));
         floppy.push(from_settings_error(
             &Settings::parse("drive = ").unwrap_err(),

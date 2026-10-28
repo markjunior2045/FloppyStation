@@ -4,11 +4,43 @@
   "ui.events.empty": "Nothing yet.",
   "ui.status.watching": "Watching {drive}",
   "ui.status.version": "Version {version}",
+  "ui.detect": "Detect disks",
+  "ui.status.detection_on": "Detection on",
+  "ui.status.detection_off": "Detection off",
+
+  "tray.tooltip": "Floppy Station - {state}",
+  "tray.open": "Open Floppy Station",
+  "tray.detect": "Detect disks",
+  "tray.exit": "Exit",
+  "tray.starting": "Starting...",
+  "tray.detection_off": "Detection is off",
+  "tray.drive_missing": "Drive {drive} not found",
+  "tray.no_disk": "{drive} no disk",
+  "tray.reading": "{drive} reading disk...",
+  "tray.launched": "{drive} {name} (launched)",
+  "tray.configured": "{drive} {name}",
+  "tray.not_configured": "{drive} disk not configured",
+  "tray.unusable": "{drive} disk can't be used",
+
+  "box.reading": "Reading floppy disk...",
+  "box.blank": "This disk has no game yet.",
+  "box.untrusted": "This disk wants to run a program you haven't approved.",
+  "box.missing": "The program on this disk isn't installed on this PC.",
+  "box.failed": "The game could not be started.",
+  "box.unusable": "This disk can't be read. It may be damaged.",
+  "box.newer": "This disk was set up by a newer version of Floppy Station.",
+  "box.configure": "Configure",
+  "box.review": "Review",
+  "box.details": "Details",
 
   "drive_connected": "Drive {drive} found.",
   "drive_disconnected": "Drive {drive} not found. Plug the drive in, or pick another letter in Preferences.",
+
   "media_inserted": "Reading floppy disk...",
   "media_removed": "Disk removed from {drive}.",
+
+  "detection_on": "Disk detection turned on.",
+  "detection_off": "Disk detection is off: Floppy Station ignores the drive until you turn it on again.",
 
   "disk_configured": "Disk: {name} ({target}).",
   "disk_not_configured": "This disk has no game yet.",
@@ -34,7 +66,9 @@
   "disk_io": "The disk could not be written: {detail}",
 
   "game_ignored_at_startup": "{name}: the disk was already in the drive when Floppy Station started. Remove and insert it to play.",
+
   "launch_untrusted": "{name}: this disk wants to run a program you haven't approved.",
+
   "game_launched": "{name} launched.",
   "game_reattached": "{name} is still open from before the drive was unplugged.",
   "game_closing": "Closing {name}...",
@@ -57,6 +91,7 @@
   "settings_invalid": "The settings file is damaged; default settings are in use.",
   "settings_io": "Floppy Station can't read or save its settings: {detail}",
   "settings_serialize": "Floppy Station couldn't save its settings.",
+
   "trust_appdata_unavailable": "Floppy Station can't find its settings folder.",
   "trust_invalid": "The approved programs file is damaged; no program is approved until it is fixed.",
   "trust_io": "Floppy Station can't read or save the approved programs: {detail}",
