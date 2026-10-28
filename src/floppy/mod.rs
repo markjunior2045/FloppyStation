@@ -93,7 +93,7 @@ pub enum DriveStatus {
     /// The drive is there, but has no disk.
     Empty,
     /// The drive has a disk.
-    Present(MediaInfo),
+    Present,
 }
 
 /// How a disk came to be reported as present.
@@ -130,9 +130,11 @@ pub enum FloppyEvent {
     DriveDisconnected {
         drive: DriveLetter,
     },
+    /// A disk is in the drive. Its volume is not read here: right after a
+    /// swap, Windows may still report the previous disk's serial and files
+    /// (see [`crate::diskconfig::inspect_inserted`]).
     MediaInserted {
         drive: DriveLetter,
-        media: MediaInfo,
         origin: InsertOrigin,
     },
     MediaRemoved {

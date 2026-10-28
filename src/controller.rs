@@ -365,6 +365,7 @@ mod tests {
                     .cloned()
                     .unwrap_or(DiskContent::NoDisk),
                 write_protected: Some(false),
+                volume: MediaInfo::default(),
             }
         }
 
@@ -404,11 +405,7 @@ mod tests {
     }
 
     fn insert(drive: DriveLetter, origin: InsertOrigin) -> FloppyEvent {
-        FloppyEvent::MediaInserted {
-            drive,
-            media: MediaInfo::default(),
-            origin,
-        }
+        FloppyEvent::MediaInserted { drive, origin }
     }
 
     fn remove(drive: DriveLetter, cause: RemovalCause) -> FloppyEvent {

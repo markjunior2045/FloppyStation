@@ -20,7 +20,7 @@ use windows::Win32::Foundation::{
     ERROR_WRITE_PROTECT,
 };
 
-use crate::floppy::{DriveLetter, suppress_error_dialogs};
+use crate::floppy::{DriveLetter, IoctlProbe, MediaInfo, MediaProbe, suppress_error_dialogs};
 use crate::kinds::GameTarget;
 use media::{Refresh, RefreshError};
 
@@ -234,6 +234,8 @@ pub struct DiskInspection {
     pub content: DiskContent,
     /// Whether the disk's write-protect tab is set; `None` if unknown.
     pub write_protected: Option<bool>,
+    /// Serial and label of the volume, read along with the configuration.
+    pub volume: MediaInfo,
 }
 
 /// Reads and classifies a disk that was just inserted in `drive`. Makes
@@ -261,9 +263,14 @@ fn inspect_mounted(drive: DriveLetter) -> DiskInspection {
     let content = inspect_dir(Path::new(&drive.root_path()));
     let writable =
         media::writable_by_ioctl(drive).or_else(|| media::writable_by_volume_flag(drive));
+    let volume = match content {
+        DiskContent::NoDisk => MediaInfo::default(),
+        _ => IoctlProbe.read_media_info(drive),
+    };
     DiskInspection {
         content,
         write_protected: writable.map(|writable| !writable),
+        volume,
     }
 }
 

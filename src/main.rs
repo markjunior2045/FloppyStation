@@ -10,9 +10,7 @@ use std::time::Instant;
 
 use floppy_station::controller::{Controller, GameEvent, System};
 use floppy_station::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
-use floppy_station::floppy::{
-    DriveLetter, FloppyEvent, IoctlProbe, MediaProbe, Monitor, Poller, ProbeKind, ProbeResult,
-};
+use floppy_station::floppy::{DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult};
 use floppy_station::kinds::GameTarget;
 use floppy_station::launcher::{CloseMode, CloseOutcome};
 use floppy_station::settings::{
@@ -235,14 +233,6 @@ fn disk_inspect(drive: DriveLetter) -> ExitCode {
     let start = Instant::now();
     let inspection = diskconfig::inspect_drive(drive);
     println!("{}", describe_inspection(&inspection));
-    let media = IoctlProbe.read_media_info(drive);
-    println!(
-        "volume: serial={} label={}",
-        media
-            .serial
-            .map_or("unknown".to_owned(), |serial| format!("{serial:08X}")),
-        media.label.as_deref().unwrap_or("-")
-    );
     let (ioctl, volume) = diskconfig::write_protection_sources(drive);
     println!(
         "write protection by source: ioctl={} volume_flag={}",
@@ -503,9 +493,14 @@ fn describe_inspection(inspection: &DiskInspection) -> String {
             None => "unreadable disk".to_owned(),
         },
     };
+    let volume = &inspection.volume;
     format!(
-        "{content}; write-protected: {}",
-        yes_no(inspection.write_protected)
+        "{content}; write-protected: {}; serial={} label={}",
+        yes_no(inspection.write_protected),
+        volume
+            .serial
+            .map_or("unknown".to_owned(), |serial| format!("{serial:08X}")),
+        volume.label.as_deref().unwrap_or("-")
     )
 }
 
@@ -540,12 +535,8 @@ fn describe(event: &FloppyEvent) -> String {
     match event {
         FloppyEvent::DriveConnected { .. } => format!("drive {drive} connected"),
         FloppyEvent::DriveDisconnected { .. } => format!("drive {drive} disconnected"),
-        FloppyEvent::MediaInserted { media, origin, .. } => {
-            let serial = media
-                .serial
-                .map_or("none (unformatted?)".to_owned(), |s| format!("{s:08X}"));
-            let label = media.label.as_deref().unwrap_or("-");
-            format!("disk inserted in {drive} ({origin:?}) serial={serial} label={label}")
+        FloppyEvent::MediaInserted { origin, .. } => {
+            format!("disk inserted in {drive} ({origin:?})")
         }
         FloppyEvent::MediaRemoved { cause, .. } => {
             format!("disk removed from {drive} ({cause:?})")

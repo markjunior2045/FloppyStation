@@ -125,7 +125,7 @@ impl Poller {
             }
             let result = probe_confirmed(self.probe.as_mut(), drive, tracker, self.confirm_delay);
             if let Some(result) = result {
-                update(drive, tracker, result, self.probe.as_mut(), &mut events);
+                update(drive, tracker, result, &mut events);
             }
             tracker.next_due = now + self.intervals.for_status(tracker.status.as_ref());
         }
@@ -168,7 +168,7 @@ fn is_change(tracker: &DriveTracker, result: ProbeResult) -> bool {
         (None, _) => true,
         (Some(DriveStatus::Missing), ProbeResult::DriveMissing) => false,
         (Some(DriveStatus::Empty), ProbeResult::NoMedia) => false,
-        (Some(DriveStatus::Present(_)), ProbeResult::Media { change_token }) => {
+        (Some(DriveStatus::Present), ProbeResult::Media { change_token }) => {
             matches!((tracker.change_token, change_token), (Some(old), Some(new)) if old != new)
         }
         _ => true,
@@ -183,7 +183,6 @@ fn update(
     drive: DriveLetter,
     tracker: &mut DriveTracker,
     result: ProbeResult,
-    probe: &mut dyn MediaProbe,
     events: &mut Vec<FloppyEvent>,
 ) {
     let present_token = match result {
@@ -199,14 +198,9 @@ fn update(
     };
     tracker.last_error = None;
 
-    let mut insert = |tracker: &mut DriveTracker, origin, events: &mut Vec<FloppyEvent>| {
-        let media = probe.read_media_info(drive);
-        tracker.status = Some(DriveStatus::Present(media.clone()));
-        events.push(FloppyEvent::MediaInserted {
-            drive,
-            media,
-            origin,
-        });
+    let insert = |tracker: &mut DriveTracker, origin, events: &mut Vec<FloppyEvent>| {
+        tracker.status = Some(DriveStatus::Present);
+        events.push(FloppyEvent::MediaInserted { drive, origin });
     };
 
     let previous = tracker.status.take();
@@ -241,7 +235,7 @@ fn update(
         (Some(DriveStatus::Empty), ProbeResult::Media { .. }) => {
             insert(tracker, InsertOrigin::Inserted, events);
         }
-        (Some(DriveStatus::Present(_)), ProbeResult::DriveMissing) => {
+        (Some(DriveStatus::Present), ProbeResult::DriveMissing) => {
             tracker.status = Some(DriveStatus::Missing);
             events.push(FloppyEvent::MediaRemoved {
                 drive,
@@ -249,14 +243,14 @@ fn update(
             });
             events.push(FloppyEvent::DriveDisconnected { drive });
         }
-        (Some(DriveStatus::Present(_)), ProbeResult::NoMedia) => {
+        (Some(DriveStatus::Present), ProbeResult::NoMedia) => {
             tracker.status = Some(DriveStatus::Empty);
             events.push(FloppyEvent::MediaRemoved {
                 drive,
                 cause: RemovalCause::Ejected,
             });
         }
-        (Some(DriveStatus::Present(media)), ProbeResult::Media { change_token }) => {
+        (Some(DriveStatus::Present), ProbeResult::Media { change_token }) => {
             let swapped = matches!(
                 (tracker.change_token, change_token),
                 (Some(old), Some(new)) if old != new
@@ -269,7 +263,7 @@ fn update(
                 });
                 insert(tracker, InsertOrigin::Inserted, events);
             } else {
-                tracker.status = Some(DriveStatus::Present(media));
+                tracker.status = Some(DriveStatus::Present);
             }
         }
         // No change.
@@ -401,15 +395,8 @@ mod tests {
         }
     }
 
-    fn inserted(token: u32, origin: InsertOrigin) -> FloppyEvent {
-        FloppyEvent::MediaInserted {
-            drive: A,
-            media: MediaInfo {
-                serial: Some(token),
-                label: None,
-            },
-            origin,
-        }
+    fn inserted(origin: InsertOrigin) -> FloppyEvent {
+        FloppyEvent::MediaInserted { drive: A, origin }
     }
 
     fn removed(cause: RemovalCause) -> FloppyEvent {
@@ -422,7 +409,7 @@ mod tests {
         assert_eq!(polls(&[EMPTY], 1), [vec![CONNECTED]]);
         assert_eq!(
             polls(&[disk(1)], 1),
-            [vec![CONNECTED, inserted(1, InsertOrigin::PresentAtStartup)]]
+            [vec![CONNECTED, inserted(InsertOrigin::PresentAtStartup)]]
         );
     }
 
@@ -431,7 +418,7 @@ mod tests {
         // The first check after a disk change reports "not ready".
         assert_eq!(
             polls(&[EMPTY, disk(1)], 1),
-            [vec![CONNECTED, inserted(1, InsertOrigin::PresentAtStartup)]]
+            [vec![CONNECTED, inserted(InsertOrigin::PresentAtStartup)]]
         );
     }
 
@@ -442,7 +429,7 @@ mod tests {
             polls(&script, 4),
             [
                 vec![CONNECTED],
-                vec![inserted(1, InsertOrigin::Inserted)],
+                vec![inserted(InsertOrigin::Inserted)],
                 vec![],
                 vec![removed(RemovalCause::Ejected)],
             ]
@@ -471,7 +458,7 @@ mod tests {
             events[1],
             [
                 removed(RemovalCause::Ejected),
-                inserted(2, InsertOrigin::Inserted)
+                inserted(InsertOrigin::Inserted)
             ]
         );
     }
@@ -492,7 +479,7 @@ mod tests {
             events[2],
             [
                 removed(RemovalCause::Ejected),
-                inserted(2, InsertOrigin::Inserted)
+                inserted(InsertOrigin::Inserted)
             ]
         );
     }
@@ -511,7 +498,7 @@ mod tests {
         let events = polls(&[MISSING, MISSING, disk(1), disk(1)], 2);
         assert_eq!(
             events[1],
-            [CONNECTED, inserted(1, InsertOrigin::DriveReconnected)]
+            [CONNECTED, inserted(InsertOrigin::DriveReconnected)]
         );
     }
 
@@ -552,7 +539,7 @@ mod tests {
         let mut poller = poller(&[disk(7)]);
         assert_eq!(poller.status(A), None);
         poller.poll();
-        assert!(matches!(poller.status(A), Some(DriveStatus::Present(_))));
+        assert!(matches!(poller.status(A), Some(DriveStatus::Present)));
     }
 
     #[test]
