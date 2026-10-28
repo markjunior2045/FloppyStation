@@ -156,7 +156,7 @@ fn probe_confirmed(
     if same_kind(first, second) && is_change(tracker, second) {
         Some(second)
     } else {
-        log::debug!("unconfirmed change on drive {drive}: {first:?} then {second:?}; ignored");
+        log::debug!("unconfirmed change on drive {drive} ({first:?} then {second:?}); ignored");
         None
     }
 }

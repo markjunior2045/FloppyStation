@@ -1,6 +1,9 @@
 //! Volume-level operations on the disk in a drive: write protection checks
 //! and making Windows read the disk again.
 
+use std::thread;
+use std::time::Duration;
+
 use windows::Win32::Foundation::{ERROR_WRITE_PROTECT, GENERIC_READ};
 use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
 use windows::Win32::System::IO::DeviceIoControl;
@@ -85,7 +88,7 @@ pub(crate) enum RefreshError {
 pub(crate) fn refresh_volume(drive: DriveLetter, mode: Refresh) -> Result<(), RefreshError> {
     // The light check used for detection first: on an empty drive, the
     // queries below make the drive retry reading for minutes.
-    if !matches!(IoctlProbe.probe(drive), ProbeResult::Media { .. }) {
+    if !has_disk(drive) {
         return Err(RefreshError::NoDisk);
     }
     let handle = open_volume_with(drive, GENERIC_READ.0).map_err(RefreshError::Failed)?;
@@ -104,6 +107,25 @@ pub(crate) fn refresh_volume(drive: DriveLetter, mode: Refresh) -> Result<(), Re
         );
     }
     ioctl(&handle, FSCTL_DISMOUNT_VOLUME).map_err(|error| RefreshError::Failed(win32_code(&error)))
+}
+
+/// Whether there is a disk in the drive. Right after a disk swap, the first
+/// checks report "not ready" just like an empty drive, so "no disk" is only
+/// trusted after a few checks.
+fn has_disk(drive: DriveLetter) -> bool {
+    const CHECKS: usize = 4;
+    const DELAY: Duration = Duration::from_millis(250);
+    for check in 0..CHECKS {
+        match IoctlProbe.probe(drive) {
+            ProbeResult::Media { .. } => return true,
+            ProbeResult::DriveMissing => return false,
+            result => log::debug!("volume {drive} check {} gave {result:?}", check + 1),
+        }
+        if check + 1 < CHECKS {
+            thread::sleep(DELAY);
+        }
+    }
+    false
 }
 
 /// Whether the disk in the drive is a floppy disk, from the media type the
