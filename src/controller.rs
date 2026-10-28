@@ -8,6 +8,9 @@
 //! - Removing a disk closes only the game launched from it, as the settings
 //!   say. Games the app did not launch are never closed.
 //! - Several games may run at once, one per drive.
+//! - With "ignore" for unplugged drives, a game whose drive is plugged back
+//!   in with the same disk is not launched again: the app keeps looking
+//!   after the one already open.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::Sender;
@@ -45,6 +48,13 @@ pub enum GameEvent {
         drive: DriveLetter,
         name: String,
     },
+    /// The drive was plugged back in with the same disk while its game was
+    /// left open: the game is not launched again, and removing the disk
+    /// closes it as usual.
+    Reattached {
+        drive: DriveLetter,
+        name: String,
+    },
     LaunchFailed {
         drive: DriveLetter,
         name: String,
@@ -77,6 +87,7 @@ impl GameEvent {
             Self::StartupDiskIgnored { .. } => "game_ignored_at_startup",
             Self::Untrusted { .. } => "launch_untrusted",
             Self::Launched { .. } => "game_launched",
+            Self::Reattached { .. } => "game_reattached",
             Self::LaunchFailed { .. } => "launch_failed",
             Self::LeftOpen { .. } => "game_left_open",
             Self::Closing { .. } => "game_closing",
@@ -133,7 +144,7 @@ impl Environment for System {
     type Game = RunningGame;
 
     fn inspect(&mut self, drive: DriveLetter) -> DiskInspection {
-        diskconfig::inspect_drive(drive)
+        diskconfig::inspect_inserted(drive)
     }
 
     fn is_trusted(&mut self, hash: &ConfigHash) -> bool {
@@ -172,6 +183,8 @@ impl Environment for System {
 /// A game the controller launched.
 struct Active<G> {
     name: String,
+    /// Hash of the disk's configuration, to recognize the disk.
+    hash: ConfigHash,
     game: G,
     /// Whether removing the disk can close it.
     closable: bool,
@@ -183,6 +196,9 @@ pub struct Controller<E: Environment> {
     close_mode: CloseMode,
     on_drive_disconnect: DisconnectAction,
     games: BTreeMap<DriveLetter, Active<E::Game>>,
+    /// Games left open because their drive was unplugged, in case it comes
+    /// back with the same disk.
+    detached: BTreeMap<DriveLetter, Active<E::Game>>,
     events: Sender<GameEvent>,
 }
 
@@ -198,6 +214,7 @@ impl<E: Environment> Controller<E> {
             close_mode,
             on_drive_disconnect: settings.on_drive_disconnect,
             games: BTreeMap::new(),
+            detached: BTreeMap::new(),
             events,
         }
     }
@@ -221,9 +238,20 @@ impl<E: Environment> Controller<E> {
             _ => None,
         };
         self.send(GameEvent::DiskRead { drive, inspection });
+        // Only the drive coming back with the same disk takes the game back.
+        let detached = self.detached.remove(&drive);
         let Some((config, hash)) = configured else {
             return;
         };
+        if let Some(active) = detached
+            && origin == InsertOrigin::DriveReconnected
+            && active.hash == hash
+        {
+            let name = active.name.clone();
+            self.games.insert(drive, active);
+            self.send(GameEvent::Reattached { drive, name });
+            return;
+        }
         let name = config.name.clone();
 
         if origin == InsertOrigin::PresentAtStartup {
@@ -241,6 +269,7 @@ impl<E: Environment> Controller<E> {
                     drive,
                     Active {
                         name: name.clone(),
+                        hash,
                         game,
                         closable: is_exe || config.process.is_some(),
                     },
@@ -255,12 +284,19 @@ impl<E: Environment> Controller<E> {
         let Some(active) = self.games.remove(&drive) else {
             return;
         };
-        let name = active.name;
-        let reason = if cause == RemovalCause::DriveDisconnected
+        if cause == RemovalCause::DriveDisconnected
             && self.on_drive_disconnect == DisconnectAction::Ignore
         {
-            Some(LeftOpenReason::DriveDisconnected)
-        } else if self.on_removal == RemovalAction::Leave {
+            self.send(GameEvent::LeftOpen {
+                drive,
+                name: active.name.clone(),
+                reason: LeftOpenReason::DriveDisconnected,
+            });
+            self.detached.insert(drive, active);
+            return;
+        }
+        let name = active.name;
+        let reason = if self.on_removal == RemovalAction::Leave {
             Some(LeftOpenReason::Setting)
         } else if !active.closable {
             Some(LeftOpenReason::NothingToClose)
@@ -436,10 +472,73 @@ mod tests {
         let events = [
             insert(a(), InsertOrigin::Inserted),
             remove(a(), RemovalCause::DriveDisconnected),
-            insert(a(), InsertOrigin::Inserted),
+            insert(a(), InsertOrigin::DriveReconnected),
         ];
         let codes = run(&mut fake, &Settings::default(), &events);
         assert_eq!(codes, ["game_launched", "game_closing", "game_launched"]);
+    }
+
+    #[test]
+    fn ignored_unplug_takes_the_game_back_with_the_same_disk() {
+        let mut fake = Fake::default();
+        fake.disks.insert(a(), configured(STEAM_PROCESS));
+        let ignore = Settings {
+            on_drive_disconnect: DisconnectAction::Ignore,
+            ..Settings::default()
+        };
+        let events = [
+            insert(a(), InsertOrigin::Inserted),
+            remove(a(), RemovalCause::DriveDisconnected),
+            insert(a(), InsertOrigin::DriveReconnected),
+            remove(a(), RemovalCause::Ejected),
+        ];
+        let codes = run(&mut fake, &ignore, &events);
+        assert_eq!(
+            codes,
+            [
+                "game_launched",
+                "game_left_open",
+                "game_reattached",
+                "game_closing"
+            ]
+        );
+        assert_eq!(fake.calls.len(), 2, "{:?}", fake.calls);
+    }
+
+    #[test]
+    fn ignored_unplug_forgets_the_game_with_another_disk() {
+        let mut fake = Fake::default();
+        fake.disks.insert(a(), configured(STEAM_PROCESS));
+        let ignore = Settings {
+            on_drive_disconnect: DisconnectAction::Ignore,
+            ..Settings::default()
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut controller = Controller::new(&mut fake, &ignore, tx);
+        controller.handle(&insert(a(), InsertOrigin::Inserted));
+        controller.handle(&remove(a(), RemovalCause::DriveDisconnected));
+        controller.env.disks.insert(a(), configured(STEAM));
+        controller.handle(&insert(a(), InsertOrigin::DriveReconnected));
+        // Plugged back in empty, then the first disk inserted: launched anew.
+        controller.handle(&remove(a(), RemovalCause::DriveDisconnected));
+        controller.env.disks.insert(a(), configured(STEAM_PROCESS));
+        controller.handle(&insert(a(), InsertOrigin::Inserted));
+        drop(controller);
+        let codes: Vec<_> = rx
+            .try_iter()
+            .map(|event| event.code())
+            .filter(|&code| code != "disk_read")
+            .collect();
+        assert_eq!(
+            codes,
+            [
+                "game_launched",
+                "game_left_open",
+                "game_launched",
+                "game_left_open",
+                "game_launched"
+            ]
+        );
     }
 
     #[test]

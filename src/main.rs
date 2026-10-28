@@ -445,6 +445,11 @@ fn describe_game_event(event: &GameEvent) -> String {
             "{name:?} not launched: this program is not approved (run `floppy-station trust`)"
         ),
         GameEvent::Launched { name, .. } => format!("launched {name:?}"),
+        GameEvent::Reattached { name, .. } => {
+            format!(
+                "{name:?} is still open from before the drive was unplugged: not launched again"
+            )
+        }
         GameEvent::LaunchFailed { name, error, .. } => {
             format!("could not launch {name:?}: {error}")
         }

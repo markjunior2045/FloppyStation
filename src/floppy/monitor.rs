@@ -232,7 +232,7 @@ fn update(
         // Drive plugged back in with a disk inside: counts as an insertion.
         (Some(DriveStatus::Missing), ProbeResult::Media { .. }) => {
             events.push(FloppyEvent::DriveConnected { drive });
-            insert(tracker, InsertOrigin::Inserted, events);
+            insert(tracker, InsertOrigin::DriveReconnected, events);
         }
         (Some(DriveStatus::Empty), ProbeResult::DriveMissing) => {
             tracker.status = Some(DriveStatus::Missing);
@@ -509,7 +509,10 @@ mod tests {
     #[test]
     fn drive_replugged_with_disk_counts_as_insertion() {
         let events = polls(&[MISSING, MISSING, disk(1), disk(1)], 2);
-        assert_eq!(events[1], [CONNECTED, inserted(1, InsertOrigin::Inserted)]);
+        assert_eq!(
+            events[1],
+            [CONNECTED, inserted(1, InsertOrigin::DriveReconnected)]
+        );
     }
 
     #[test]

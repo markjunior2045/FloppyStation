@@ -99,8 +99,11 @@ pub enum DriveStatus {
 /// How a disk came to be reported as present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertOrigin {
-    /// The disk was inserted (or its drive plugged in) while monitoring.
+    /// The disk was inserted while monitoring.
     Inserted,
+    /// The drive was plugged back in with a disk inside. Counts as an
+    /// insertion.
+    DriveReconnected,
     /// The disk was already in the drive when monitoring started.
     PresentAtStartup,
 }
