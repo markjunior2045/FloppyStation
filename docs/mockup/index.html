@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floppy Station mockup</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="vendor/xp.css-0.2.6/XP.css">
+  <link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+  <div class="desktop">
+    <aside class="controls" id="controls" aria-label="Mockup controls"></aside>
+
+    <div class="window app-window" id="main-window">
+      <div class="title-bar">
+        <div class="title-bar-text"><img src="icon.svg" alt="">Floppy Station</div>
+        <div class="title-bar-controls">
+          <button aria-label="Minimize" data-action="close-window"></button>
+          <button aria-label="Close" data-action="close-window"></button>
+        </div>
+      </div>
+      <div class="window-body">
+        <menu role="tablist" id="tabs">
+          <button role="tab" data-tab="status">Status</button>
+          <button role="tab" data-tab="disk">Disk</button>
+          <button role="tab" data-tab="approvals">Approvals</button>
+          <button role="tab" data-tab="prefs">Preferences</button>
+        </menu>
+        <article role="tabpanel" id="panel"></article>
+      </div>
+      <div class="status-bar" id="status-bar"></div>
+    </div>
+  </div>
+
+  <div class="window loading-box" id="loading-box" hidden>
+    <div class="title-bar">
+      <div class="title-bar-text"><img src="icon.svg" alt="">Floppy Station</div>
+      <div class="title-bar-controls" id="loading-controls"></div>
+    </div>
+    <div class="window-body" id="loading-body"></div>
+  </div>
+
+  <div class="dialog-layer" id="dialog-layer" hidden></div>
+
+  <div class="tray-menu" id="tray-menu" hidden></div>
+  <div class="taskbar">
+    <div class="tray">
+      <button class="tray-icon" data-action="toggle-tray" id="tray-icon" title="">
+        <img src="icon.svg" alt="Floppy Station">
+      </button>
+      <span id="clock">12:00</span>
+    </div>
+  </div>
+
+  <script src="mockup.js"></script>
+</body>
+</html>

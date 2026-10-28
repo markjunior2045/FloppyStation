@@ -4,8 +4,8 @@ Design of the Tauri app (stage B). It maps every state and code the library
 returns to what the user sees, so the frontend (phases 5 to 7) has a single
 reference. The UI can still change while it is built.
 
-Status of this document: **step 2 of 3** (inventory, flows, states and
-wireframes). The visual identity with a clickable mockup (step 3) comes next.
+Status of this document: **step 3 of 3** (inventory, flows, states,
+wireframes, visual identity and a clickable [mockup](mockup/index.html)).
 
 ## Decisions
 
@@ -569,6 +569,84 @@ With a message (the bar is replaced, a button appears):
 |                          [ Review ]  |
 +======================================+
 ```
+
+## Visual identity
+
+### Icon
+
+[`mockup/icon.svg`](mockup/icon.svg): a blue 3.5" floppy disk with a metal
+shutter and a label with green lines, our own drawing. It is the app icon,
+the tray icon and the title bar icon, and never changes with the state. For
+the tray and the installer (phases 6 and 8) it becomes a multi-size `.ico`;
+the 16 px size may need a simplified drawing.
+
+### Colors
+
+The window colors come from XP.css (the Luna blue title bar, the beige
+window, the white group boxes). The app adds only a few:
+
+| Use | Color |
+|---|---|
+| Success text and messages | `#2f7d32` on `#eef8ec` |
+| Warning text and messages | `#b35b00` on `#fff4e5` |
+| Warning icon | yellow `#f5c400` triangle |
+| Info icon | blue `#2f6fde` circle |
+| Selected list row | `#316ac5` with white text |
+
+No dark theme: Windows XP had none.
+
+### Typography
+
+| Use | Font |
+|---|---|
+| Everything | Tahoma 11 px (XP's 8 pt) |
+| Window titles | Trebuchet MS bold (from XP.css) |
+| File preview | Consolas |
+
+XP.css ships a pixel font recreating MS Sans Serif for its 98 theme; the app
+doesn't use it (its license is unclear, and XP used Tahoma anyway). Tahoma,
+Trebuchet MS and Consolas come with Windows 10 and 11.
+
+### Sizes
+
+| Window | Size |
+|---|---|
+| Main window | 760×520 |
+| Loading box | 330 wide, height to fit |
+| Dialogs (process picker, preview, confirmations) | 340 or 440 wide |
+
+## Frontend notes
+
+For phases 5 to 7.
+
+- **Svelte** components per tab and per dialog; the state comes from the
+  backend (see [Backend additions needed](#backend-additions-needed)).
+- **XP.css 0.2.6**, pinned, from npm. Its CSS is imported once; the app's own
+  styles only lay out and override the font.
+- **Main window**: Tauri window with `decorations: false`. The XP title bar is
+  HTML with `data-tauri-drag-region`; its buttons call minimize and close.
+  Transparent background so the title bar's rounded corners show.
+  Closing destroys the window (the app keeps running in the tray).
+- **Loading box**: a second Tauri window, created when needed and destroyed
+  when it closes: `decorations: false`, `always_on_top`, `skip_taskbar`,
+  `focus: false` (must not take focus from a full screen game), centered.
+- **Language files**: `en.json`, keyed by the codes in
+  [States and codes](#states-and-codes), with placeholders such as `{name}`.
+
+## Mockup
+
+[`mockup/index.html`](mockup/index.html): open it in a browser (no build, no
+network). A panel on the left simulates the drive: insert one of several fake
+disks (Steam game, program not approved, program from another PC, blank,
+write protected, newer version, damaged), remove it, unplug the drive, plus
+the first run and a damaged settings file. The tray icon is at the bottom
+right.
+
+Timings are shorter than on a real drive: reading takes 2.5 s (about 6 s for
+real) and writing 2.5 s (3 to 7 s for real).
+
+The mockup is plain HTML, CSS and JavaScript to try the design; the app is
+built again in Svelte, reusing its markup and styles.
 
 ## Backend additions needed
 

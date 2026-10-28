@@ -1,0 +1,518 @@
+/* Floppy Station mockup. XP.css draws the controls; this file only lays out
+   the mockup and sets the app's own touches. */
+
+:root {
+  --desktop: #3a6ea5;
+  --taskbar-top: #3b81f5;
+  --taskbar-bottom: #1f4fc2;
+  --tray: #0f8af0;
+  --panel-text: #1b1b1b;
+  --muted: #5b5b5b;
+  --warn: #b35b00;
+  --ok: #2f7d32;
+}
+
+/* XP used Tahoma for everything but window titles. */
+body,
+.window,
+.window button,
+.window input,
+.window select,
+.window textarea,
+.window label,
+.window table {
+  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-size: 11px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--desktop);
+  color: var(--panel-text);
+  overflow: hidden;
+}
+
+.desktop {
+  position: absolute;
+  inset: 0 0 30px 0;
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Mockup controls: not part of the app. */
+
+.controls {
+  width: 250px;
+  flex: none;
+  background: #fffbe6;
+  border: 1px dashed #8a7a2c;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.controls h1 {
+  font-size: 12px;
+  margin: 0 0 2px;
+}
+
+.controls p.note {
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+.controls h2 {
+  font-size: 11px;
+  margin: 12px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b5a10;
+}
+
+.controls button {
+  display: block;
+  width: 100%;
+  margin: 3px 0;
+  text-align: left;
+  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-size: 11px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.controls button[disabled] {
+  cursor: default;
+}
+
+.controls label {
+  display: block;
+  margin: 4px 0;
+}
+
+/* Main window */
+
+.app-window {
+  width: 760px;
+  height: 520px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-window[hidden],
+.loading-box[hidden],
+.dialog-layer[hidden] {
+  display: none;
+}
+
+.title-bar-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.title-bar-text img {
+  width: 16px;
+  height: 16px;
+}
+
+.app-window .window-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 8px;
+}
+
+.app-window [role="tabpanel"] {
+  flex: 1;
+  overflow: auto;
+  margin-bottom: 0;
+}
+
+.app-window .status-bar {
+  margin: 0 3px;
+}
+
+fieldset {
+  margin-bottom: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row.spread {
+  justify-content: space-between;
+}
+
+.big-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.title {
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: #fff8d6;
+  border: 1px solid #d8c06a;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+}
+
+.drive-icon {
+  width: 32px;
+  height: 22px;
+  flex: none;
+  border: 1px solid #6b6b6b;
+  border-radius: 2px;
+  background: linear-gradient(#f2f2f2, #c8c8c8);
+  position: relative;
+}
+
+.drive-icon::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 9px;
+  height: 3px;
+  background: #3a3a3a;
+}
+
+.drive-icon.missing {
+  opacity: 0.45;
+}
+
+/* Forms */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.form-grid .full {
+  grid-column: 2;
+}
+
+.form-grid input[type="text"],
+.form-grid select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.with-button {
+  display: flex;
+  gap: 6px;
+}
+
+.with-button input {
+  flex: 1;
+}
+
+.list {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  height: 92px;
+  overflow: auto;
+}
+
+.list.tall {
+  height: 150px;
+}
+
+.list div {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 5px;
+  cursor: default;
+}
+
+.list div:hover {
+  background: #e8eefb;
+}
+
+.list div.selected {
+  background: #316ac5;
+  color: #fff;
+}
+
+.hint {
+  font-size: 11px;
+}
+
+.result {
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid;
+}
+
+.result.ok {
+  background: #eef8ec;
+  border-color: #9cc79a;
+}
+
+.result.warn {
+  background: #fff4e5;
+  border-color: #e0b070;
+}
+
+progress {
+  width: 100%;
+}
+
+/* Approvals table */
+
+.table-wrap {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  height: 150px;
+  overflow: auto;
+}
+
+table.approvals {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.approvals th {
+  text-align: left;
+  font-weight: normal;
+  background: linear-gradient(#fdfdfd, #ebeadb);
+  border-bottom: 1px solid #c7c5b2;
+  border-right: 1px solid #c7c5b2;
+  padding: 3px 6px;
+  position: sticky;
+  top: 0;
+}
+
+table.approvals td {
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 330px;
+}
+
+table.approvals tr.selected td {
+  background: #316ac5;
+  color: #fff;
+}
+
+.pending dl {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 2px 8px;
+  margin: 6px 0;
+}
+
+.pending dt {
+  color: var(--muted);
+}
+
+.pending dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* Preferences */
+
+.prefs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 10px;
+}
+
+.prefs input[type="number"] {
+  width: 56px;
+}
+
+.prefs .indent {
+  margin-left: 20px;
+}
+
+/* Loading box: centered on the screen, above everything. */
+
+.loading-box {
+  position: fixed;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  width: 330px;
+  z-index: 30;
+}
+
+.loading-box .window-body {
+  margin: 12px 14px 14px;
+}
+
+.loading-box .message {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.loading-box .message img {
+  width: 24px;
+  height: 24px;
+}
+
+/* Dialogs over the main window */
+
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  width: 340px;
+}
+
+.dialog.wide {
+  width: 440px;
+}
+
+.dialog pre {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  padding: 6px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: Consolas, "Lucida Console", monospace;
+  font-size: 11px;
+}
+
+/* Taskbar and tray: only to show the tray menu. */
+
+.taskbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30px;
+  background: linear-gradient(var(--taskbar-top), var(--taskbar-bottom));
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tray {
+  background: var(--tray);
+  border-left: 1px solid #0b5fb5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #fff;
+  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-size: 11px;
+}
+
+.tray button.tray-icon {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+}
+
+.tray-icon img {
+  width: 18px;
+  height: 18px;
+}
+
+.tray-menu {
+  position: fixed;
+  right: 50px;
+  bottom: 34px;
+  background: #fff;
+  border: 1px solid #8a8a8a;
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.35);
+  padding: 2px;
+  min-width: 230px;
+  z-index: 50;
+  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-size: 11px;
+}
+
+.tray-menu[hidden] {
+  display: none;
+}
+
+.tray-menu div {
+  padding: 4px 20px 4px 22px;
+  position: relative;
+  cursor: default;
+}
+
+.tray-menu div.item:hover {
+  background: #316ac5;
+  color: #fff;
+}
+
+.tray-menu div.state {
+  color: #808080;
+}
+
+.tray-menu div.default {
+  font-weight: bold;
+}
+
+.tray-menu div.checked::before {
+  content: "\2713";
+  position: absolute;
+  left: 7px;
+}
+
+.tray-menu hr {
+  border: 0;
+  border-top: 1px solid #c5c5c5;
+  margin: 2px 1px;
+}
+
+.tooltip-like {
+  opacity: 0.9;
+}
