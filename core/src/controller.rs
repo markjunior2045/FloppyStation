@@ -204,19 +204,28 @@ pub struct Controller<E: Environment> {
 
 impl<E: Environment> Controller<E> {
     pub fn new(env: E, settings: &Settings, events: Sender<GameEvent>) -> Self {
-        let close_mode = match settings.on_removal {
-            RemovalAction::Force => CloseMode::Force,
-            _ => CloseMode::Graceful(settings.close_timeout()),
-        };
-        Self {
+        let mut controller = Self {
             env,
-            on_removal: settings.on_removal,
-            close_mode,
-            on_drive_disconnect: settings.on_drive_disconnect,
+            on_removal: RemovalAction::default(),
+            close_mode: CloseMode::Force,
+            on_drive_disconnect: DisconnectAction::default(),
             games: BTreeMap::new(),
             detached: BTreeMap::new(),
             events,
-        }
+        };
+        controller.update_settings(settings);
+        controller
+    }
+
+    /// Applies changed settings. Games already launched keep running and are
+    /// closed with the new settings.
+    pub fn update_settings(&mut self, settings: &Settings) {
+        self.on_removal = settings.on_removal;
+        self.close_mode = match settings.on_removal {
+            RemovalAction::Force => CloseMode::Force,
+            _ => CloseMode::Graceful(settings.close_timeout()),
+        };
+        self.on_drive_disconnect = settings.on_drive_disconnect;
     }
 
     pub fn handle(&mut self, event: &FloppyEvent) {
@@ -589,6 +598,22 @@ mod tests {
         // Ejecting still closes.
         let codes = run(&mut fake, &ignore, &cycle());
         assert_eq!(codes, ["game_launched", "game_closing"]);
+    }
+
+    #[test]
+    fn closes_with_updated_settings() {
+        let mut fake = Fake::default();
+        fake.disks.insert(a(), configured(STEAM_PROCESS));
+        let (tx, _rx) = mpsc::channel();
+        let mut controller = Controller::new(&mut fake, &Settings::default(), tx);
+        controller.handle(&insert(a(), InsertOrigin::Inserted));
+        controller.update_settings(&Settings {
+            on_removal: RemovalAction::Force,
+            ..Settings::default()
+        });
+        controller.handle(&remove(a(), RemovalCause::Ejected));
+        drop(controller);
+        assert_eq!(fake.calls[1], Call::Close("Steam".into(), CloseMode::Force));
     }
 
     #[test]

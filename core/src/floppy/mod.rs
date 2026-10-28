@@ -11,6 +11,9 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+mod drives;
+
+pub use drives::removable_drives;
 pub use monitor::{Monitor, PollIntervals, Poller, suppress_error_dialogs};
 pub use probe::{IoctlProbe, MediaProbe, ProbeKind, ProbeResult, VolumeProbe};
 

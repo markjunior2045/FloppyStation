@@ -61,6 +61,12 @@ pub struct Poller {
 }
 
 impl Poller {
+    /// Changes the time between checks. Takes effect from each drive's next
+    /// check.
+    pub fn set_intervals(&mut self, intervals: PollIntervals) {
+        self.intervals = intervals;
+    }
+
     pub fn new(
         drives: impl IntoIterator<Item = DriveLetter>,
         probe: Box<dyn MediaProbe>,
@@ -285,7 +291,11 @@ fn update(
 /// that was just plugged in), and it just finishes in the background.
 pub struct Monitor {
     // Dropping this sender is the stop signal.
-    _stop: Sender<()>,
+    commands: Sender<Command>,
+}
+
+enum Command {
+    SetIntervals(PollIntervals),
 }
 
 impl Monitor {
@@ -293,7 +303,7 @@ impl Monitor {
     /// ends when the monitor is dropped or when the receiving end of
     /// `events` is closed.
     pub fn spawn(mut poller: Poller, events: Sender<FloppyEvent>) -> io::Result<Self> {
-        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let (commands_tx, commands_rx) = mpsc::channel();
         thread::Builder::new()
             .name("floppy-monitor".into())
             .spawn(move || {
@@ -307,16 +317,25 @@ impl Monitor {
                     let Some(next) = poller.next_due() else {
                         return;
                     };
-                    // Waiting on the stop channel instead of sleeping lets
+                    // Waiting on the command channel instead of sleeping lets
                     // the monitor stop immediately.
                     let wait = next.saturating_duration_since(Instant::now());
-                    match stop_rx.recv_timeout(wait) {
+                    match commands_rx.recv_timeout(wait) {
                         Err(RecvTimeoutError::Timeout) => {}
-                        Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
+                        Ok(Command::SetIntervals(intervals)) => poller.set_intervals(intervals),
+                        Err(RecvTimeoutError::Disconnected) => return,
                     }
                 }
             })?;
-        Ok(Self { _stop: stop_tx })
+        Ok(Self {
+            commands: commands_tx,
+        })
+    }
+
+    /// Changes the time between checks without restarting, so the state of
+    /// the drives (and the games launched from them) is kept.
+    pub fn set_intervals(&self, intervals: PollIntervals) {
+        let _ = self.commands.send(Command::SetIntervals(intervals));
     }
 }
 

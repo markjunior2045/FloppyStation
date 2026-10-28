@@ -208,7 +208,9 @@ impl Settings {
         Duration::from_secs(self.close_timeout_s)
     }
 
-    fn normalize(&mut self) {
+    /// Clamps out-of-range values, as when loading the file. For settings
+    /// coming from elsewhere, such as the UI.
+    pub fn normalize(&mut self) {
         let interval = MIN_POLL_INTERVAL_MS..=MAX_POLL_INTERVAL_MS;
         clamp("poll_interval_ms", &mut self.poll_interval_ms, &interval);
         clamp(
