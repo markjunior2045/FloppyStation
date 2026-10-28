@@ -1,5 +1,6 @@
-//! Console prototype entry point. Only wires the library modules together
-//! and prints events; all logic lives in the `floppy_station` library.
+//! Console tool: the stage A prototype, kept for diagnostics and hardware
+//! tests. Only wires the core library together and prints events; all logic
+//! lives in `floppy_station_core`.
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -8,27 +9,33 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
-use floppy_station::controller::{Controller, GameEvent, System};
-use floppy_station::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
-use floppy_station::floppy::{DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult};
-use floppy_station::kinds::GameTarget;
-use floppy_station::launcher::{CloseMode, CloseOutcome};
-use floppy_station::settings::{
+use floppy_station_core::controller::{Controller, GameEvent, System};
+use floppy_station_core::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
+use floppy_station_core::floppy::{
+    DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult,
+};
+use floppy_station_core::kinds::GameTarget;
+use floppy_station_core::launcher::{CloseMode, CloseOutcome};
+use floppy_station_core::settings::{
     DisconnectAction, MAX_POLL_INTERVAL_MS, MIN_POLL_INTERVAL_MS, RemovalAction, Settings,
 };
-use floppy_station::trust::{self, RevokeError, TrustStore};
+use floppy_station_core::trust::{self, RevokeError, TrustStore};
 
 const USAGE: &str = "\
-usage: floppy-station [options]             watch the drive, launch and close games
-       floppy-station disk inspect [options]  show what the disk in the drive contains
-       floppy-station disk write <file> [options]
-                                              validate a local config file and write
-                                              it to the disk
-       floppy-station disk remove [options]   remove the config from the disk
-       floppy-station trust [options]         approve the program on the disk in the drive
-       floppy-station trust list              list the approved disk configs
-       floppy-station trust revoke <hash>     remove an approval (the start of the hash
-                                              is enough)
+usage: floppy-station-cli [options]
+           watch the drive, launch and close games
+       floppy-station-cli disk inspect [options]
+           show what the disk in the drive contains
+       floppy-station-cli disk write <file> [options]
+           validate a local config file and write it to the disk
+       floppy-station-cli disk remove [options]
+           remove the config from the disk
+       floppy-station-cli trust [options]
+           approve the program on the disk in the drive
+       floppy-station-cli trust list
+           list the approved disk configs
+       floppy-station-cli trust revoke <hash>
+           remove an approval (the start of the hash is enough)
 
 options:
   --drive <letter>       drive to watch, overriding the settings file
@@ -442,7 +449,7 @@ fn describe_game_event(event: &GameEvent) -> String {
             format!("{name:?} not launched: the disk was already in the drive at startup")
         }
         GameEvent::Untrusted { name, .. } => format!(
-            "{name:?} not launched: this program is not approved (run `floppy-station trust`)"
+            "{name:?} not launched: this program is not approved (run `floppy-station-cli trust`)"
         ),
         GameEvent::Launched { name, .. } => format!("launched {name:?}"),
         GameEvent::Reattached { name, .. } => {
@@ -547,7 +554,7 @@ fn describe(event: &FloppyEvent) -> String {
 /// Polls the drive directly, without the state machine, printing every raw
 /// result and how long each check took.
 fn run_diagnostics(settings: &Settings, kind: ProbeKind) {
-    floppy_station::floppy::suppress_error_dialogs();
+    floppy_station_core::floppy::suppress_error_dialogs();
     let mut probe = kind.create();
     let start = Instant::now();
     let mut previous = None;

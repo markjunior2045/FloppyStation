@@ -1,0 +1,12 @@
+[package]
+name = "floppy-station-cli"
+description = "Console tool for Floppy Station: watch the drive, inspect and write disks, approve programs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+floppy-station-core.workspace = true
+env_logger.workspace = true
+log.workspace = true

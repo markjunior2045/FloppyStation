@@ -184,10 +184,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 
 [[package]]
-name = "floppy-station"
+name = "floppy-station-cli"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "floppy-station-core",
+ "log",
+]
+
+[[package]]
+name = "floppy-station-core"
+version = "0.1.0"
+dependencies = [
  "log",
  "serde",
  "sha2",
