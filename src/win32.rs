@@ -33,11 +33,16 @@ impl Drop for OwnedHandle {
 /// administrator permission and does not touch the file system. Returns the
 /// Win32 error code on failure.
 pub(crate) fn open_volume(drive: DriveLetter) -> Result<OwnedHandle, u32> {
+    open_volume_with(drive, 0)
+}
+
+/// Opens the volume device of a drive with the given access rights.
+pub(crate) fn open_volume_with(drive: DriveLetter, access: u32) -> Result<OwnedHandle, u32> {
     let path = HSTRING::from(drive.device_path());
     unsafe {
         CreateFileW(
             &path,
-            0,
+            access,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             None,
             OPEN_EXISTING,

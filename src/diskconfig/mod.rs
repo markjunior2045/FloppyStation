@@ -22,6 +22,7 @@ use windows::Win32::Foundation::{
 
 use crate::floppy::{DriveLetter, suppress_error_dialogs};
 use crate::kinds::GameTarget;
+use media::{Refresh, RefreshError};
 
 pub use format::CURRENT_VERSION;
 
@@ -235,10 +236,28 @@ pub struct DiskInspection {
     pub write_protected: Option<bool>,
 }
 
-/// Reads and classifies the disk in `drive`. May take a few seconds right
-/// after the disk is inserted, while Windows mounts it.
+/// Reads and classifies a disk that was just inserted in `drive`. Makes
+/// Windows read the disk again first, even if the volume is in use: some
+/// USB floppy drives do not always report disk swaps, and Windows would
+/// otherwise show the previous disk's files. May take a few seconds while
+/// Windows mounts the disk.
+pub fn inspect_inserted(drive: DriveLetter) -> DiskInspection {
+    suppress_error_dialogs();
+    let _ = refresh(drive, Refresh::Force);
+    inspect_mounted(drive)
+}
+
+/// Reads and classifies the disk in `drive`. Makes Windows read the disk
+/// again first, unless something is using the volume.
 pub fn inspect_drive(drive: DriveLetter) -> DiskInspection {
     suppress_error_dialogs();
+    if refresh(drive, Refresh::IfIdle) == Err(RefreshError::InUse) {
+        log::warn!("drive {drive} is in use; what it shows may be from a previous disk");
+    }
+    inspect_mounted(drive)
+}
+
+fn inspect_mounted(drive: DriveLetter) -> DiskInspection {
     let content = inspect_dir(Path::new(&drive.root_path()));
     let writable =
         media::writable_by_ioctl(drive).or_else(|| media::writable_by_volume_flag(drive));
@@ -266,6 +285,19 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Makes Windows read the disk again (see [`media::refresh_volume`]).
+fn refresh(drive: DriveLetter, mode: Refresh) -> Result<(), RefreshError> {
+    let result = media::refresh_volume(drive, mode);
+    match result {
+        Ok(()) => log::debug!("volume {drive} dismounted"),
+        Err(RefreshError::Failed(code)) => {
+            log::debug!("could not dismount volume {drive} (error {code})")
+        }
+        Err(error) => log::debug!("volume {drive} not dismounted ({error:?})"),
+    }
+    result
+}
+
 /// Write protection as reported by each available source. For diagnostics.
 pub fn write_protection_sources(drive: DriveLetter) -> (Option<bool>, Option<bool>) {
     suppress_error_dialogs();
@@ -280,6 +312,9 @@ pub fn write_protection_sources(drive: DriveLetter) -> (Option<bool>, Option<boo
 #[derive(Debug)]
 pub enum WriteError {
     WriteProtected,
+    /// Another program is using the disk, so the app cannot make sure
+    /// Windows is not confusing it with a previous disk.
+    InUse,
     DiskFull,
     /// The disk was removed (or the drive unplugged) during the operation.
     Removed,
@@ -293,6 +328,7 @@ impl WriteError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::WriteProtected => "disk_write_protected",
+            Self::InUse => "disk_in_use",
             Self::DiskFull => "disk_full",
             Self::Removed => "disk_removed",
             Self::VerifyFailed => "disk_write_failed",
@@ -339,6 +375,7 @@ impl std::error::Error for WriteError {}
 /// file.
 pub fn write_drive(drive: DriveLetter, config: &DiskConfig) -> Result<ConfigHash, WriteError> {
     suppress_error_dialogs();
+    refresh_before_write(drive)?;
     write_dir(Path::new(&drive.root_path()), config)
 }
 
@@ -375,6 +412,7 @@ fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// was one.
 pub fn remove_drive(drive: DriveLetter) -> Result<bool, WriteError> {
     suppress_error_dialogs();
+    refresh_before_write(drive)?;
     remove_dir(Path::new(&drive.root_path()))
 }
 
@@ -386,6 +424,16 @@ pub fn remove_dir(root: &Path) -> Result<bool, WriteError> {
         Ok(()) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(WriteError::from_io(error)),
+    }
+}
+
+/// Writing with what Windows remembers of a previous disk could damage the
+/// file system of the disk in the drive, so writes need a fresh mount.
+fn refresh_before_write(drive: DriveLetter) -> Result<(), WriteError> {
+    match refresh(drive, Refresh::IfIdle) {
+        Err(RefreshError::InUse) => Err(WriteError::InUse),
+        // Not a floppy drive, or no disk: writing reports its own errors.
+        _ => Ok(()),
     }
 }
 
