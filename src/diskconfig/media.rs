@@ -2,14 +2,14 @@
 //! and making Windows read the disk again.
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{ERROR_WRITE_PROTECT, GENERIC_READ};
 use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
 use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::{
     DISK_GEOMETRY, FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME, FixedMedia,
-    IOCTL_DISK_GET_DRIVE_GEOMETRY, IOCTL_DISK_IS_WRITABLE, RemovableMedia, Unknown,
+    IOCTL_DISK_GET_MEDIA_TYPES, IOCTL_DISK_IS_WRITABLE, RemovableMedia, Unknown,
 };
 use windows::core::HSTRING;
 
@@ -88,13 +88,20 @@ pub(crate) enum RefreshError {
 pub(crate) fn refresh_volume(drive: DriveLetter, mode: Refresh) -> Result<(), RefreshError> {
     // The light check used for detection first: on an empty drive, the
     // queries below make the drive retry reading for minutes.
-    if !has_disk(drive) {
+    let start = Instant::now();
+    let present = has_disk(drive);
+    log::debug!("volume {drive} disk check took {:?}", start.elapsed());
+    if !present {
         return Err(RefreshError::NoDisk);
     }
     let handle = open_volume_with(drive, GENERIC_READ.0).map_err(RefreshError::Failed)?;
-    if !is_floppy(&handle) {
+    let start = Instant::now();
+    let floppy = is_floppy(&handle);
+    log::debug!("volume {drive} media type check took {:?}", start.elapsed());
+    if !floppy {
         return Err(RefreshError::NotFloppy);
     }
+    let start = Instant::now();
     // Locking succeeds only if nothing is using the volume, and makes
     // Windows finish pending writes first. Closing the handle unlocks it.
     if let Err(error) = ioctl(&handle, FSCTL_LOCK_VOLUME) {
@@ -106,7 +113,13 @@ pub(crate) fn refresh_volume(drive: DriveLetter, mode: Refresh) -> Result<(), Re
             win32_code(&error)
         );
     }
-    ioctl(&handle, FSCTL_DISMOUNT_VOLUME).map_err(|error| RefreshError::Failed(win32_code(&error)))
+    let result = ioctl(&handle, FSCTL_DISMOUNT_VOLUME)
+        .map_err(|error| RefreshError::Failed(win32_code(&error)));
+    log::debug!(
+        "volume {drive} lock and dismount took {:?}",
+        start.elapsed()
+    );
+    result
 }
 
 /// Whether there is a disk in the drive. Right after a disk swap, the first
@@ -128,25 +141,36 @@ fn has_disk(drive: DriveLetter) -> bool {
     false
 }
 
-/// Whether the disk in the drive is a floppy disk, from the media type the
-/// disk driver reports.
+/// Whether the drive is a floppy drive, from the disk formats its driver
+/// supports. Unlike asking for the current disk's geometry, this does not
+/// make the drive read the disk.
 fn is_floppy(handle: &OwnedHandle) -> bool {
-    let mut geometry = DISK_GEOMETRY::default();
+    let mut formats = [DISK_GEOMETRY::default(); 16];
     let mut returned = 0;
     let result = unsafe {
         DeviceIoControl(
             handle.raw(),
-            IOCTL_DISK_GET_DRIVE_GEOMETRY,
+            IOCTL_DISK_GET_MEDIA_TYPES,
             None,
             0,
-            Some((&raw mut geometry).cast()),
-            size_of::<DISK_GEOMETRY>() as u32,
+            Some(formats.as_mut_ptr().cast()),
+            size_of_val(&formats) as u32,
             Some(&mut returned),
             None,
         )
     };
+    if let Err(error) = result {
+        log::debug!(
+            "IOCTL_DISK_GET_MEDIA_TYPES failed with error {}",
+            win32_code(&error)
+        );
+        return false;
+    }
+    let count = returned as usize / size_of::<DISK_GEOMETRY>();
     // Every media type other than these is a floppy format.
-    result.is_ok() && ![Unknown, RemovableMedia, FixedMedia].contains(&geometry.MediaType)
+    formats[..count.min(formats.len())]
+        .iter()
+        .any(|format| ![Unknown, RemovableMedia, FixedMedia].contains(&format.MediaType))
 }
 
 fn ioctl(handle: &OwnedHandle, code: u32) -> windows::core::Result<()> {

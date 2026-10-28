@@ -12,6 +12,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
+use std::time::Instant;
 
 use sha2::{Digest, Sha256};
 use windows::Win32::Foundation::{
@@ -260,13 +261,28 @@ pub fn inspect_drive(drive: DriveLetter) -> DiskInspection {
 }
 
 fn inspect_mounted(drive: DriveLetter) -> DiskInspection {
+    let start = Instant::now();
     let content = inspect_dir(Path::new(&drive.root_path()));
+    log::debug!(
+        "volume {drive} reading the config took {:?}",
+        start.elapsed()
+    );
+    let start = Instant::now();
     let writable =
         media::writable_by_ioctl(drive).or_else(|| media::writable_by_volume_flag(drive));
+    log::debug!(
+        "volume {drive} write protection check took {:?}",
+        start.elapsed()
+    );
+    let start = Instant::now();
     let volume = match content {
         DiskContent::NoDisk => MediaInfo::default(),
         _ => IoctlProbe.read_media_info(drive),
     };
+    log::debug!(
+        "volume {drive} reading serial and label took {:?}",
+        start.elapsed()
+    );
     DiskInspection {
         content,
         write_protected: writable.map(|writable| !writable),
