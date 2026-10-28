@@ -45,6 +45,11 @@ pub struct Settings {
     pub close_timeout_s: u64,
     /// What to do with the game when the drive is unplugged.
     pub on_drive_disconnect: DisconnectAction,
+    /// Whether the drive is watched at all. Off, the app ignores the drive:
+    /// no checks (and no clicking), and disks neither launch nor close games.
+    pub detection_enabled: bool,
+    /// Whether the app shows a small box while it reads a disk.
+    pub show_loading_box: bool,
 }
 
 /// What to do with a game when its disk is removed.
@@ -103,6 +108,8 @@ impl Default for Settings {
             on_removal: RemovalAction::default(),
             close_timeout_s: DEFAULT_CLOSE_TIMEOUT_S,
             on_drive_disconnect: DisconnectAction::default(),
+            detection_enabled: true,
+            show_loading_box: true,
         }
     }
 }
@@ -259,6 +266,8 @@ mod tests {
             on_removal = "none"
             close_timeout_s = 30
             on_drive_disconnect = "ignore"
+            detection_enabled = false
+            show_loading_box = false
             "#,
         )
         .unwrap();
@@ -273,6 +282,8 @@ mod tests {
         assert_eq!(settings.on_removal, RemovalAction::Leave);
         assert_eq!(settings.close_timeout(), Duration::from_secs(30));
         assert_eq!(settings.on_drive_disconnect, DisconnectAction::Ignore);
+        assert!(!settings.detection_enabled);
+        assert!(!settings.show_loading_box);
     }
 
     #[test]
