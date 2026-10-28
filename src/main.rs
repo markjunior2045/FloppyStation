@@ -10,7 +10,9 @@ use std::time::Instant;
 
 use floppy_station::controller::{Controller, GameEvent, System};
 use floppy_station::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
-use floppy_station::floppy::{DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult};
+use floppy_station::floppy::{
+    DriveLetter, FloppyEvent, IoctlProbe, MediaProbe, Monitor, Poller, ProbeKind, ProbeResult,
+};
 use floppy_station::kinds::GameTarget;
 use floppy_station::launcher::{CloseMode, CloseOutcome};
 use floppy_station::settings::{
@@ -233,6 +235,14 @@ fn disk_inspect(drive: DriveLetter) -> ExitCode {
     let start = Instant::now();
     let inspection = diskconfig::inspect_drive(drive);
     println!("{}", describe_inspection(&inspection));
+    let media = IoctlProbe.read_media_info(drive);
+    println!(
+        "volume: serial={} label={}",
+        media
+            .serial
+            .map_or("unknown".to_owned(), |serial| format!("{serial:08X}")),
+        media.label.as_deref().unwrap_or("-")
+    );
     let (ioctl, volume) = diskconfig::write_protection_sources(drive);
     println!(
         "write protection by source: ioctl={} volume_flag={}",
