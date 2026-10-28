@@ -1,0 +1,122 @@
+/* Floppy Station's own styles. XP.css draws the controls; this file lays
+   out the app and sets its own touches (see docs/ui-design.md). */
+
+:root {
+  --muted: #5b5b5b;
+  --warn: #b35b00;
+  --ok: #2f7d32;
+}
+
+/* XP used Tahoma for everything but window titles. */
+body,
+.window,
+.window button,
+.window input,
+.window select,
+.window textarea,
+.window label,
+.window table {
+  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-size: 11px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+/* The window is transparent so the XP title bar's rounded corners show. */
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.app-window {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.title-bar {
+  user-select: none;
+}
+
+.title-bar-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.title-bar-text img {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.app-window .window-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 8px;
+}
+
+.app-window .status-bar {
+  margin: 0 3px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+/* XP's indeterminate progress bar. XP.css animates <progress> with
+   pseudo-elements that WebView2 leaves still, so the app draws its own:
+   three green blocks sliding through. */
+.marquee {
+  position: relative;
+  height: 14px;
+  border: 1px solid #686868;
+  border-radius: 3px;
+  background: #fff;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.marquee span {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: -30px;
+  width: 28px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 8px, #fff 8px 10px),
+    linear-gradient(180deg, #acedad 0, #7be47d 14%, #4cda50 28%, #2ed330 42%, #42d845 57%, #76e275 71%, #8fe791 85%, #fff);
+  animation: marquee 2s linear infinite;
+}
+
+@keyframes marquee {
+  from {
+    left: -30px;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee span {
+    animation-duration: 6s;
+  }
+}

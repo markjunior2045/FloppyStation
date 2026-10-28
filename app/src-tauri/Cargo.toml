@@ -1,0 +1,18 @@
+[package]
+name = "floppy-station"
+description = "Floppy Station: turn floppy disks into physical game cartridges for Windows PCs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+floppy-station-core.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json = "1.0.149"
+tauri = { version = "2.12.5", features = [] }

@@ -1,0 +1,64 @@
+{
+  "ui.title": "Floppy Station",
+  "ui.events.intro": "What Floppy Station is doing. Insert or remove a disk to see it here.",
+  "ui.events.empty": "Nothing yet.",
+  "ui.status.watching": "Watching {drive}",
+  "ui.status.version": "Version {version}",
+
+  "drive_connected": "Drive {drive} found.",
+  "drive_disconnected": "Drive {drive} not found. Plug the drive in, or pick another letter in Preferences.",
+  "media_inserted": "Reading floppy disk...",
+  "media_removed": "Disk removed from {drive}.",
+
+  "disk_configured": "Disk: {name} ({target}).",
+  "disk_not_configured": "This disk has no game yet.",
+  "disk_config_invalid": "The game file on this disk is damaged: {detail}",
+  "disk_unsupported_version": "This disk was set up by a newer version of Floppy Station.",
+  "disk_unsupported_kind": "This disk uses a game type this version doesn't know ({kind}).",
+  "disk_unformatted": "This disk isn't formatted. Format it in File Explorer first.",
+  "disk_unreadable": "This disk can't be read. It may be damaged.",
+  "disk_none": "No disk in the drive.",
+
+  "config_too_large": "The file is too large.",
+  "config_not_utf8": "The file isn't text.",
+  "config_syntax": "The file has a syntax error: {detail}",
+  "config_missing_field": "{field} is missing.",
+  "config_wrong_type": "{field} must be {type}.",
+  "config_invalid_value": "{field} is not valid: {reason}",
+
+  "disk_write_protected": "The disk is write protected. Slide the tab and try again.",
+  "disk_in_use": "Another program is using the disk. Close File Explorer windows on it and try again.",
+  "disk_full": "The disk is full.",
+  "disk_removed": "The disk was removed while writing. Insert it and try again.",
+  "disk_write_failed": "The file could not be verified after writing. Try again or use another disk.",
+  "disk_io": "The disk could not be written: {detail}",
+
+  "game_ignored_at_startup": "{name}: the disk was already in the drive when Floppy Station started. Remove and insert it to play.",
+  "launch_untrusted": "{name}: this disk wants to run a program you haven't approved.",
+  "game_launched": "{name} launched.",
+  "game_reattached": "{name} is still open from before the drive was unplugged.",
+  "game_closing": "Closing {name}...",
+
+  "launch_not_found": "Couldn't start {name}: the program isn't installed on this PC (the disk may come from another PC).",
+  "launch_elevation_required": "Couldn't start {name}: the program needs administrator rights. Floppy Station doesn't start those, because it couldn't close them.",
+  "launch_steam_missing": "Couldn't start {name}: Steam isn't installed.",
+  "launch_failed": "Couldn't start {name}: Windows couldn't start it (error {error}).",
+
+  "left_open_setting": "{name} was left open: your preferences say to leave games open.",
+  "left_open_drive_disconnected": "{name} was left open: the drive was unplugged, and your preferences say to leave the game open.",
+  "left_open_no_process": "{name} was left open: no process to close is set for this game.",
+
+  "close_done": "{name} closed.",
+  "close_forced": "{name} was forced to close.",
+  "close_already_closed": "{name} was already closed.",
+  "close_failed": "{name} could not be closed (it may be running as administrator).",
+
+  "settings_appdata_unavailable": "Floppy Station can't find its settings folder.",
+  "settings_invalid": "The settings file is damaged; default settings are in use.",
+  "settings_io": "Floppy Station can't read or save its settings: {detail}",
+  "settings_serialize": "Floppy Station couldn't save its settings.",
+  "trust_appdata_unavailable": "Floppy Station can't find its settings folder.",
+  "trust_invalid": "The approved programs file is damaged; no program is approved until it is fixed.",
+  "trust_io": "Floppy Station can't read or save the approved programs: {detail}",
+  "trust_serialize": "Floppy Station couldn't save the approved programs."
+}

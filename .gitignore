@@ -2,3 +2,6 @@
 
 # Local planning notes for Claude Code (not part of the project)
 CLAUDE.md
+/app/node_modules
+/app/dist
+/app/src-tauri/gen
