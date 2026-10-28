@@ -34,9 +34,9 @@ pub struct Settings {
     /// Time between two checks of the drive while it has a disk (or is
     /// missing), in milliseconds.
     pub poll_interval_ms: u64,
-    /// Time between two checks of an empty drive, in milliseconds. Longer
-    /// than `poll_interval_ms` because checking an empty floppy drive makes
-    /// it click.
+    /// Time between two checks of an empty drive, in milliseconds. Separate
+    /// from `poll_interval_ms` because checking an empty floppy drive makes
+    /// it click: longer intervals click less but notice disks later.
     pub empty_poll_interval_ms: u64,
     /// What to do with the game when its disk is removed.
     pub on_removal: RemovalAction,
