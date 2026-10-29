@@ -10,21 +10,23 @@
   interface BoxState {
     /** Key of the message in the language file; none while reading. */
     message: string | null;
+    /** The disk is write protected, so it can't be configured. */
+    write_protected: boolean;
   }
 
-  // The button each message offers, if any.
-  const BUTTONS: Record<string, string> = {
-    "box.blank": "box.configure",
-    "box.untrusted": "box.review",
-    "box.failed": "box.details",
-    "box.unusable": "box.details",
-    "box.newer": "box.details",
+  // The button each message offers, if any, and the tab it opens.
+  const BUTTONS: Record<string, { label: string; tab: string }> = {
+    "box.blank": { label: "box.configure", tab: "disk" },
+    "box.untrusted": { label: "box.review", tab: "approvals" },
+    "box.failed": { label: "box.details", tab: "status" },
+    "box.unusable": { label: "box.details", tab: "status" },
+    "box.newer": { label: "box.details", tab: "status" },
   };
 
   // Messages that are warnings rather than information.
   const WARNINGS = new Set(["box.untrusted", "box.missing", "box.failed", "box.unusable"]);
 
-  let state: BoxState | null = $state({ message: null });
+  let state: BoxState | null = $state({ message: null, write_protected: false });
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
@@ -36,7 +38,7 @@
   });
 
   const close = () => invoke("close_loading_box");
-  const openMain = () => invoke("open_main_window");
+  const openMain = (tab: string) => invoke("open_main_window", { tab });
 </script>
 
 <div class="window box">
@@ -68,7 +70,12 @@
       </div>
       {#if BUTTONS[state.message]}
         <div class="actions">
-          <button onclick={openMain}>{t(BUTTONS[state.message])}</button>
+          <button
+            disabled={state.message === "box.blank" && state.write_protected}
+            onclick={() => openMain(BUTTONS[state!.message!].tab)}
+          >
+            {t(BUTTONS[state.message].label)}
+          </button>
         </div>
       {/if}
     {:else}

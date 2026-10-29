@@ -3,13 +3,13 @@
   // Preferences tabs. The backend sends the current state on every change.
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
-  import { api, type AppEvent, type AppState, type Settings } from "./lib/api";
+  import { api, type AppEvent, type AppState, type Settings, type Tab } from "./lib/api";
   import { t } from "./lib/i18n";
   import TitleBar from "./lib/TitleBar.svelte";
+  import ApprovalsTab from "./tabs/ApprovalsTab.svelte";
+  import DiskTab from "./tabs/DiskTab.svelte";
   import PreferencesTab from "./tabs/PreferencesTab.svelte";
   import StatusTab from "./tabs/StatusTab.svelte";
-
-  type Tab = "status" | "disk" | "approvals" | "prefs";
 
   const TABS: Tab[] = ["status", "disk", "approvals", "prefs"];
   const MAX_EVENTS = 200;
@@ -28,6 +28,10 @@
       // `seq` drops the events received both ways.
       unlisten.push(await listen<AppState>("app-state", (event) => (appState = event.payload)));
       unlisten.push(await listen<AppEvent>("app-event", (event) => addEvents([event.payload])));
+      // The loading box's buttons open the window on a given tab.
+      unlisten.push(await listen<Tab>("open-tab", (event) => openTab(event.payload)));
+      const asked = await api.takeMainTab();
+      if (asked) openTab(asked);
       addEvents(await api.recentEvents());
       appState = await api.state();
       settings = await api.settings();
@@ -68,11 +72,13 @@
       {#if !appState || !settings}
         <div class="muted">{t("ui.loading")}</div>
       {:else if tab === "status"}
-        <StatusTab app={appState} {settings} {events} {openTab} />
-      {:else if tab === "prefs"}
-        <PreferencesTab {settings} detection={appState.detection} onSaved={(saved) => (settings = saved)} />
+        <StatusTab app={appState} {settings} {events} {openTab} onSaved={(saved) => (settings = saved)} />
+      {:else if tab === "disk"}
+        <DiskTab app={appState} />
+      {:else if tab === "approvals"}
+        <ApprovalsTab app={appState} />
       {:else}
-        <div class="coming-soon muted">{t("ui.coming_soon")}</div>
+        <PreferencesTab {settings} detection={appState.detection} onSaved={(saved) => (settings = saved)} />
       {/if}
     </div>
   </div>
@@ -90,12 +96,5 @@
     flex: 1;
     overflow: auto;
     margin-bottom: 0;
-  }
-
-  .coming-soon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
   }
 </style>

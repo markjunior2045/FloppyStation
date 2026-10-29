@@ -1,23 +1,24 @@
 <script lang="ts">
   // What is going on now: the drive, the disk in it and the game.
   import icon from "../assets/icon.svg";
-  import { api, type AppEvent, type AppState, type Settings } from "../lib/api";
+  import { api, type AppEvent, type AppState, type Settings, type Tab } from "../lib/api";
   import { t } from "../lib/i18n";
   import Icon from "../lib/Icon.svelte";
   import Marquee from "../lib/Marquee.svelte";
-
-  type Tab = "status" | "disk" | "approvals" | "prefs";
+  import Welcome from "./Welcome.svelte";
 
   let {
     app,
     settings,
     events,
     openTab,
+    onSaved,
   }: {
     app: AppState;
-    settings: Settings | null;
+    settings: Settings;
     events: AppEvent[];
     openTab: (tab: Tab) => void;
+    onSaved: (settings: Settings) => void;
   } = $props();
 
   let bannerClosed = $state(false);
@@ -46,7 +47,6 @@
   }
 
   function removal(): string {
-    if (!settings) return "";
     if (settings.on_removal === "close") {
       return t("ui.game.removal.close", { timeout: settings.close_timeout_s });
     }
@@ -63,6 +63,10 @@
     <span><Icon name="warn" /> {t(app.settingsError, { detail: "" })}</span>
     <button onclick={() => (bannerClosed = true)}>{t("ui.button.close")}</button>
   </div>
+{/if}
+
+{#if app.firstRun}
+  <Welcome {app} {settings} {onSaved} {openTab} />
 {/if}
 
 <fieldset>
@@ -176,10 +180,6 @@
 </div>
 
 <style>
-  .spacer {
-    flex: 1;
-  }
-
   .reading {
     margin-bottom: 6px;
   }

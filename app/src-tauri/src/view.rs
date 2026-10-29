@@ -55,6 +55,8 @@ pub struct ConfigView {
     pub args: Vec<String>,
     /// `args` as one line, as typed in the form.
     pub args_line: String,
+    /// Whether the program exists on this PC; always true for Steam games.
+    pub found: bool,
     pub process: Option<String>,
     pub hash: String,
     /// Whether a program (`kind = "exe"`) is approved on this PC; always
@@ -264,7 +266,12 @@ fn disk_view(content: &DiskContent, write_protected: Option<bool>) -> DiskView {
                 ),
             };
             let approved = is_approved(config, hash);
+            let found = match &config.target {
+                GameTarget::Exe(game) => game.path.is_file(),
+                _ => true,
+            };
             Some(ConfigView {
+                found,
                 args_line: exe::join_args(&args),
                 name: config.name.clone(),
                 kind: config.target.kind(),

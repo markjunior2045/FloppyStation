@@ -181,3 +181,175 @@ fieldset {
     animation-duration: 6s;
   }
 }
+
+.spacer {
+  flex: 1;
+}
+
+.actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Forms (Disk tab) */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.form-grid input[type="text"],
+.form-grid input[type="number"],
+.form-grid select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.with-button {
+  display: flex;
+  gap: 6px;
+}
+
+.with-button input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A white list box with selectable rows. */
+.list {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  height: 92px;
+  overflow: auto;
+}
+
+.list.tall {
+  height: 150px;
+}
+
+.list .item {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 5px;
+  cursor: default;
+}
+
+.list .item:hover {
+  background: #e8eefb;
+}
+
+.list .item.selected {
+  background: #316ac5;
+  color: #fff;
+}
+
+.list .muted {
+  padding: 2px 5px;
+}
+
+.result {
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid;
+}
+
+.result.ok {
+  background: #eef8ec;
+  border-color: #9cc79a;
+}
+
+.result.warn {
+  background: #fff4e5;
+  border-color: #e0b070;
+}
+
+/* Approvals table */
+
+.table-wrap {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  height: 150px;
+  overflow: auto;
+}
+
+table.approvals {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+table.approvals th {
+  text-align: left;
+  font-weight: normal;
+  background: linear-gradient(#fdfdfd, #ebeadb);
+  border-bottom: 1px solid #c7c5b2;
+  border-right: 1px solid #c7c5b2;
+  padding: 3px 6px;
+  position: sticky;
+  top: 0;
+}
+
+table.approvals td {
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+table.approvals tr.selected td {
+  background: #316ac5;
+  color: #fff;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 2px 8px;
+  margin: 6px 0;
+}
+
+.details dt {
+  color: var(--muted);
+}
+
+.details dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+/* Dialogs over the main window */
+
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dialog {
+  width: 340px;
+}
+
+.dialog.wide {
+  width: 440px;
+}
+
+.dialog pre {
+  background: #fff;
+  border: 1px solid #7f9db9;
+  padding: 6px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: Consolas, "Lucida Console", monospace;
+  font-size: 11px;
+  user-select: text;
+}
