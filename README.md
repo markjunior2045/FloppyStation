@@ -11,6 +11,8 @@ Floppy Station runs in the background, in the system tray, and stays out of
 the way: no administrator rights, no watching what you do, and it only
 touches the drive you choose.
 
+![The Status tab, with a Counter-Strike 2 disk in the drive](docs/screenshots/status.png)
+
 ## Requirements
 
 - Windows 10 or 11.
@@ -45,6 +47,8 @@ starts in the tray: click the floppy icon to open the window.
    if you don't want the game closed.
 5. Click **Write to disk**. Take the disk out and insert it again: the game
    starts.
+
+![The Disk tab, setting up a Steam game](docs/screenshots/disk.png)
 
 To change or remove a disk's game, insert it and use the **Disk** tab.
 
