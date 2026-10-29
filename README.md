@@ -136,6 +136,15 @@ args = ["-fullscreen"]
 | `args` | For `exe`, optional: arguments for the program. |
 | `process` | Optional: name of the program to close when the disk is removed, such as `cs2.exe`. |
 
+## Labels for your disks
+
+To make your disks look the part, use
+[Floppy Station Sticker Creator](https://markjunior2045.github.io/FloppyStationStickerCreator/)
+([source](https://github.com/markjunior2045/FloppyStationStickerCreator)), a
+companion website for designing game labels for 3.5" disks, in the style of
+old game labels. It prints them at their exact size (A4 PDF with cut marks,
+or PNG) and runs entirely in your browser.
+
 ## What Floppy Station touches
 
 - **Only the drive you choose.** The drive list only asks Windows which
