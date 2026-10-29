@@ -9,6 +9,7 @@ pub mod floppy;
 pub mod kinds;
 pub mod launcher;
 pub mod settings;
+pub mod startup;
 pub mod trust;
 
 mod win32;

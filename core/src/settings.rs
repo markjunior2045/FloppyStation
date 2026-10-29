@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use windows::Win32::System::Com::CoTaskMemFree;
-use windows::Win32::UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
+use windows::Win32::UI::Shell::{
+    FOLDERID_LocalAppData, FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+};
 
 use crate::floppy::{DriveLetter, PollIntervals};
 
@@ -242,18 +244,23 @@ fn clamp(name: &str, value: &mut u64, range: &std::ops::RangeInclusive<u64>) {
 
 /// Folder of the app's local files, `%APPDATA%\floppy-station`.
 pub(crate) fn app_dir() -> Result<PathBuf, SettingsError> {
-    Ok(roaming_app_data()?.join(APP_DIR))
+    Ok(known_folder(&FOLDERID_RoamingAppData)
+        .ok_or(SettingsError::AppDataUnavailable)?
+        .join(APP_DIR))
 }
 
-fn roaming_app_data() -> Result<PathBuf, SettingsError> {
+/// Folder for what only matters on this PC (logs, helper copies),
+/// `%LOCALAPPDATA%\floppy-station`.
+pub fn local_dir() -> Option<PathBuf> {
+    Some(known_folder(&FOLDERID_LocalAppData)?.join(APP_DIR))
+}
+
+fn known_folder(id: &windows::core::GUID) -> Option<PathBuf> {
     unsafe {
-        let path = SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, None)
-            .map_err(|_| SettingsError::AppDataUnavailable)?;
+        let path = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None).ok()?;
         let result = path.to_string();
         CoTaskMemFree(Some(path.0 as *const _));
-        result
-            .map(PathBuf::from)
-            .map_err(|_| SettingsError::AppDataUnavailable)
+        result.ok().map(PathBuf::from)
     }
 }
 

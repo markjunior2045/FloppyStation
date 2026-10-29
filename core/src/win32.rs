@@ -4,6 +4,7 @@ use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+use windows::Win32::System::Registry::{HKEY, RRF_RT_REG_SZ, RegGetValueW};
 use windows::core::HSTRING;
 
 use crate::floppy::DriveLetter;
@@ -64,4 +65,27 @@ pub(crate) fn win32_code(error: &windows::core::Error) -> u32 {
     } else {
         hresult
     }
+}
+
+/// A text value from the registry, or `None` if it is missing or not text.
+pub(crate) fn registry_string(key: HKEY, subkey: &str, value: &str) -> Option<String> {
+    let (subkey, value) = (HSTRING::from(subkey), HSTRING::from(value));
+    let mut buffer = [0u16; 1024];
+    let mut size = size_of_val(&buffer) as u32;
+    let result = unsafe {
+        RegGetValueW(
+            key,
+            &subkey,
+            &value,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&raw mut size),
+        )
+    };
+    if result.is_err() {
+        return None;
+    }
+    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..len]))
 }

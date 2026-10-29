@@ -7,12 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW,
-};
-use windows::core::HSTRING;
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 
 use super::vdf;
+use crate::win32::registry_string;
 
 /// An installed Steam game.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -55,28 +53,6 @@ fn steam_root() -> Option<PathBuf> {
     .filter_map(|(key, subkey, value)| registry_string(key, subkey, value))
     .map(PathBuf::from)
     .find(|path| path.is_dir())
-}
-
-fn registry_string(key: HKEY, subkey: &str, value: &str) -> Option<String> {
-    let (subkey, value) = (HSTRING::from(subkey), HSTRING::from(value));
-    let mut buffer = [0u16; 1024];
-    let mut size = size_of_val(&buffer) as u32;
-    let result = unsafe {
-        RegGetValueW(
-            key,
-            &subkey,
-            &value,
-            RRF_RT_REG_SZ,
-            None,
-            Some(buffer.as_mut_ptr().cast()),
-            Some(&raw mut size),
-        )
-    };
-    if result.is_err() {
-        return None;
-    }
-    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
-    Some(String::from_utf16_lossy(&buffer[..len]))
 }
 
 /// The library folders: Steam's own folder plus those listed in

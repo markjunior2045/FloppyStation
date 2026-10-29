@@ -11,7 +11,7 @@
 //! That pending request can't be cancelled: neither cancelling the I/O nor
 //! killing the process takes effect before Windows gives up (minutes
 //! later), and meanwhile every other request to the drive waits behind it.
-//! So it runs in a small helper process (the app itself started with
+//! So it runs in a small helper process (a copy of the app started with
 //! [`WAIT_ARG`]) that the monitor never has to wait for.
 //!
 //! Each helper holds a named mutex for its drive until it ends. A monitor
@@ -22,11 +22,13 @@
 //! The helpers are tied to a job object, so they go away with the app (once
 //! Windows lets them).
 
+use std::fs;
 use std::io;
 use std::os::windows::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::time::UNIX_EPOCH;
 
 use windows::Win32::Foundation::{GENERIC_READ, HANDLE, WAIT_TIMEOUT};
 use windows::Win32::System::JobObjects::{
@@ -41,6 +43,7 @@ use windows::Win32::System::Threading::{
 use windows::core::{HSTRING, PCWSTR};
 
 use super::{DriveLetter, suppress_error_dialogs};
+use crate::settings;
 use crate::win32::{OwnedHandle, open_volume_with};
 
 /// Command-line argument that turns the app into a wait helper:
@@ -77,13 +80,61 @@ pub struct HelperWaiter {
 
 impl HelperWaiter {
     /// Helpers running the current executable, which must call
-    /// [`run_wait_helper`] at startup.
+    /// [`run_wait_helper`] at startup. They run from a copy of it (see
+    /// [`helper_copy`]).
     pub fn current_exe() -> io::Result<Self> {
         Ok(Self {
-            exe: std::env::current_exe()?,
+            exe: helper_copy(&std::env::current_exe()?),
             job: Arc::new(kill_on_close_job()),
         })
     }
+}
+
+/// A copy of `exe` for the helpers to run from, in the local app folder. A
+/// helper can outlive the app by minutes (until Windows gives up on its
+/// request), and while it runs its executable can't be replaced: running
+/// from a copy keeps the app's own executable free to update, uninstall or
+/// rebuild. Falls back to `exe` itself if the copy can't be made.
+fn helper_copy(exe: &Path) -> PathBuf {
+    match try_helper_copy(exe) {
+        Ok(copy) => copy,
+        Err(error) => {
+            log::warn!("could not copy the wait helper, running it from the app: {error}");
+            exe.to_path_buf()
+        }
+    }
+}
+
+fn try_helper_copy(exe: &Path) -> io::Result<PathBuf> {
+    let dir = settings::local_dir()
+        .ok_or_else(|| io::Error::other("no local app data folder"))?
+        .join("helper");
+    fs::create_dir_all(&dir)?;
+    // Named after the build, so a copy still in use is never overwritten.
+    let metadata = fs::metadata(exe)?;
+    let modified = metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let stem = exe
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("floppy-station");
+    let prefix = format!("{stem}-wait-");
+    let copy = dir.join(format!("{prefix}{}-{modified}.exe", metadata.len()));
+    if !copy.exists() {
+        let temp = copy.with_extension("tmp");
+        fs::copy(exe, &temp)?;
+        fs::rename(&temp, &copy)?;
+    }
+    // Copies of other builds go, unless a helper still runs from them.
+    for entry in fs::read_dir(&dir)?.flatten() {
+        let path = entry.path();
+        if path != copy && entry.file_name().to_string_lossy().starts_with(&prefix) {
+            let _ = fs::remove_file(path);
+        }
+    }
+    Ok(copy)
 }
 
 impl DiskWaiter for HelperWaiter {

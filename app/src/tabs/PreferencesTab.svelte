@@ -18,9 +18,31 @@
   let drives: string[] = $state([]);
   let error: string | null = $state(null);
 
+  let startup = $state(false);
+
   onMount(async () => {
     drives = await api.removableDrives();
+    startup = await api.startupEnabled();
   });
+
+  // Kept in the registry, not in the settings file.
+  async function setStartup(enabled: boolean) {
+    try {
+      await api.setStartup(enabled);
+      error = null;
+    } catch (code) {
+      error = String(code);
+    }
+    startup = await api.startupEnabled();
+  }
+
+  async function openLogFolder() {
+    try {
+      await api.openLogFolder();
+    } catch (code) {
+      error = String(code);
+    }
+  }
 
   async function save(change: Partial<Settings>) {
     const updated = { ...settings, ...change };
@@ -51,7 +73,12 @@
 
 {#if error}
   <div class="banner">
-    <span><Icon name="warn" /> {t("ui.prefs.save_failed", { error: t(error, { detail: "" }) })}</span>
+    <span>
+      <Icon name="warn" />
+      {error.startsWith("settings_")
+        ? t("ui.prefs.save_failed", { error: t(error, { detail: "" }) })
+        : t(error)}
+    </span>
   </div>
 {/if}
 
@@ -212,14 +239,21 @@
         <label for="pref-notify">{t("ui.prefs.notifications")}</label>
       </div>
       <div class="field-row">
-        <input type="checkbox" id="pref-startup" disabled />
-        <label for="pref-startup">{t("ui.prefs.startup")}{" "}<span class="muted">{t("ui.prefs.startup_later")}</span></label>
+        <input
+          type="checkbox"
+          id="pref-startup"
+          checked={startup}
+          onchange={(event) => setStartup(event.currentTarget.checked)}
+        />
+        <label for="pref-startup">{t("ui.prefs.startup")}</label>
       </div>
     </fieldset>
   </div>
 </div>
 
 <div class="reset">
+  <button onclick={openLogFolder}>{t("ui.button.open_logs")}</button>
+  <span class="spacer"></span>
   {#if confirmingReset}
     <span>{t("ui.prefs.reset_confirm")}</span>
     <button onclick={restoreDefaults}>{t("ui.button.restore")}</button>

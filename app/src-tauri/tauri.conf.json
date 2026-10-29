@@ -16,11 +16,32 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Marcos Galvao",
+    "copyright": "Copyright (c) 2026 Marcos Galvao",
+    "category": "Game",
+    "shortDescription": "Floppy disks as game cartridges",
+    "longDescription": "Insert a floppy disk to launch its game, remove it to close the game.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
   }
 }

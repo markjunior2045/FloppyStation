@@ -7,6 +7,7 @@
 mod disk;
 mod events;
 mod locale;
+mod system;
 mod tray;
 mod view;
 mod watcher;
@@ -24,7 +25,8 @@ fn main() {
     if floppy_station_core::floppy::run_wait_helper() {
         return;
     }
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    system::init_logging();
+    log::info!("Floppy Station {} starting", env!("CARGO_PKG_VERSION"));
 
     let app = tauri::Builder::default()
         // Starting the app again opens the running one's window.
@@ -74,6 +76,9 @@ fn main() {
             disk::approvals,
             disk::approve_disk,
             disk::revoke_approval,
+            system::startup_enabled,
+            system::set_startup,
+            system::open_log_folder,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Floppy Station");

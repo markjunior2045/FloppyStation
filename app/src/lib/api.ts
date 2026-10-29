@@ -114,6 +114,10 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setDetection: (enabled: boolean) => invoke<void>("set_detection", { enabled }),
   removableDrives: () => invoke<string[]>("removable_drives"),
+  startupEnabled: () => invoke<boolean>("startup_enabled"),
+  /** Rejects with `startup_failed`. */
+  setStartup: (enabled: boolean) => invoke<void>("set_startup", { enabled }),
+  openLogFolder: () => invoke<void>("open_log_folder"),
   finishWelcome: () => invoke<void>("finish_welcome"),
   /** The tab a newly opened window should show, if another place asked. */
   takeMainTab: () => invoke<Tab | null>("take_main_tab"),
