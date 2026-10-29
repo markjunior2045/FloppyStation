@@ -18,6 +18,11 @@ use watcher::Watcher;
 use windows::LoadingBox;
 
 fn main() {
+    // Started by the drive monitor to wait for a disk: see the core's
+    // `floppy::wait` module.
+    if floppy_station_core::floppy::run_wait_helper() {
+        return;
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let app = tauri::Builder::default()

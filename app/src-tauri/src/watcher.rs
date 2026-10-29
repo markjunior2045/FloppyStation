@@ -12,7 +12,7 @@ use std::time::Duration;
 use floppy_station_core::controller::{Controller, GameEvent, System};
 use floppy_station_core::diskconfig::DiskContent;
 use floppy_station_core::floppy::{
-    self, DriveLetter, FloppyEvent, InsertOrigin, Monitor, Poller, ProbeKind,
+    self, DriveLetter, FloppyEvent, HelperWaiter, InsertOrigin, Monitor, Poller, ProbeKind,
 };
 use floppy_station_core::launcher::LaunchError;
 use floppy_station_core::settings::Settings;
@@ -53,6 +53,9 @@ struct Inner {
     monitor: Mutex<Option<Monitor>>,
     /// Kept so the controller outlives each monitor.
     floppy_tx: Sender<FloppyEvent>,
+    /// Shared by the monitors, so a new one takes over the wait for a disk
+    /// left by the one it replaces. `None` if quiet detection is unavailable.
+    waiter: Option<HelperWaiter>,
     log: Mutex<EventLog>,
     view: Mutex<DriveView>,
 }
@@ -80,6 +83,9 @@ impl Watcher {
                 settings_error: error.as_ref().map(|error| error.code()),
                 monitor: Mutex::new(None),
                 floppy_tx,
+                waiter: HelperWaiter::current_exe()
+                    .inspect_err(|error| log::warn!("quiet detection unavailable: {error}"))
+                    .ok(),
                 log: Mutex::new(EventLog::default()),
             }),
         };
@@ -148,7 +154,7 @@ impl Watcher {
     ///   already in the drive is treated like one present when the app
     ///   starts: its game isn't launched.
     /// - Another drive starts watching it from scratch.
-    /// - New intervals apply from the next check.
+    /// - New intervals and quiet detection apply from the next check.
     /// - What to do with games applies from the next disk removal.
     pub fn save_settings(&self, mut new: Settings) -> Result<(), &'static str> {
         new.normalize();
@@ -176,10 +182,13 @@ impl Watcher {
             } else {
                 self.inner.app.state::<LoadingBox>().close(&self.inner.app);
             }
-        } else if new.poll_intervals() != old.poll_intervals()
-            && let Some(monitor) = lock(&self.inner.monitor).as_ref()
-        {
-            monitor.set_intervals(new.poll_intervals());
+        } else if let Some(monitor) = lock(&self.inner.monitor).as_ref() {
+            if new.poll_intervals() != old.poll_intervals() {
+                monitor.set_intervals(new.poll_intervals());
+            }
+            if new.quiet_detection != old.quiet_detection {
+                monitor.set_quiet(new.quiet_detection);
+            }
         }
 
         if detection_changed {
@@ -206,6 +215,10 @@ impl Watcher {
             ProbeKind::default().create(),
             settings.poll_intervals(),
         );
+        let poller = match &self.inner.waiter {
+            Some(waiter) => poller.with_waiter(Box::new(waiter.clone()), settings.quiet_detection),
+            None => poller,
+        };
         let monitor = Monitor::spawn(poller, self.inner.floppy_tx.clone())?;
         *lock(&self.inner.monitor) = Some(monitor);
         Ok(())

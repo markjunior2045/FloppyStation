@@ -60,6 +60,7 @@ export interface Settings {
   on_drive_disconnect: "removal" | "ignore";
   detection_enabled: boolean;
   show_loading_box: boolean;
+  quiet_detection: boolean;
 }
 
 export const api = {

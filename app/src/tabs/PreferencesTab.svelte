@@ -101,12 +101,24 @@
           min="250"
           max="10000"
           step="250"
+          disabled={settings.quiet_detection}
           value={settings.empty_poll_interval_ms}
           onchange={(event) => save({ empty_poll_interval_ms: number(event) })}
         />
         <label for="empty-poll">{t("ui.prefs.ms_empty")}</label>
       </div>
-      <p class="muted hint indent">{t("ui.prefs.click_hint")}</p>
+      <div class="field-row quiet">
+        <input
+          type="checkbox"
+          id="pref-quiet"
+          checked={settings.quiet_detection}
+          onchange={(event) => save({ quiet_detection: event.currentTarget.checked })}
+        />
+        <label for="pref-quiet">{t("ui.prefs.quiet")}</label>
+      </div>
+      <p class="muted hint indent">
+        {t(settings.quiet_detection ? "ui.prefs.quiet_hint" : "ui.prefs.click_hint")}
+      </p>
     </fieldset>
   </div>
 
@@ -240,5 +252,9 @@
 
   .indent {
     margin-left: 20px;
+  }
+
+  .quiet {
+    margin-top: 8px;
   }
 </style>
