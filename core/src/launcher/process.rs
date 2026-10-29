@@ -1,21 +1,24 @@
 //! Finding, asking to close and terminating processes. Only used when a game
-//! is being closed: nothing here runs while games are playing.
+//! is being closed, or when the user asks for the open applications:
+//! nothing here runs while games are playing.
 
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{FILETIME, HWND, LPARAM, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::JobObjects::{JobObjectBasicProcessIdList, QueryInformationJobObject};
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 use windows::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-    PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    GetCurrentProcessId, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE,
+    EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongW, GetWindowTextLengthW,
+    GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE, WS_EX_TOOLWINDOW,
 };
 use windows::core::BOOL;
 
@@ -95,6 +98,16 @@ pub(crate) fn wait_all(processes: &[Process], timeout: Duration) -> bool {
 /// IDs of the running processes whose executable is named `name` (e.g.
 /// `cs2.exe`), case-insensitive.
 pub(crate) fn processes_named(name: &str) -> Vec<u32> {
+    let name = name.to_lowercase();
+    running_processes()
+        .into_iter()
+        .filter(|(_, file)| file.to_lowercase() == name)
+        .map(|(pid, _)| pid)
+        .collect()
+}
+
+/// Every running process: its ID and executable name.
+fn running_processes() -> Vec<(u32, String)> {
     let snapshot = match unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {
         Ok(snapshot) => OwnedHandle(snapshot),
         Err(error) => {
@@ -102,22 +115,82 @@ pub(crate) fn processes_named(name: &str) -> Vec<u32> {
             return Vec::new();
         }
     };
-    let name = name.to_lowercase();
     let mut entry = PROCESSENTRY32W {
         dwSize: size_of::<PROCESSENTRY32W>() as u32,
         ..Default::default()
     };
-    let mut pids = Vec::new();
+    let mut processes = Vec::new();
     let mut more = unsafe { Process32FirstW(snapshot.raw(), &mut entry) }.is_ok();
     while more {
         let file = &entry.szExeFile;
         let len = file.iter().position(|&c| c == 0).unwrap_or(file.len());
-        if String::from_utf16_lossy(&file[..len]).to_lowercase() == name {
-            pids.push(entry.th32ProcessID);
-        }
+        processes.push((entry.th32ProcessID, String::from_utf16_lossy(&file[..len])));
         more = unsafe { Process32NextW(snapshot.raw(), &mut entry) }.is_ok();
     }
-    pids
+    processes
+}
+
+/// Programs that have windows but aren't what users mean by an "open
+/// application".
+const NOT_APPLICATIONS: &[&str] = &[
+    "explorer.exe",
+    "applicationframehost.exe",
+    "textinputhost.exe",
+    "shellexperiencehost.exe",
+    "searchhost.exe",
+    "startmenuexperiencehost.exe",
+];
+
+/// Whether Windows keeps the window out of sight, like those of suspended
+/// Store apps.
+fn is_cloaked(hwnd: HWND) -> bool {
+    let mut cloaked = 0u32;
+    let result = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            (&raw mut cloaked).cast(),
+            size_of::<u32>() as u32,
+        )
+    };
+    result.is_ok() && cloaked != 0
+}
+
+/// Executable names (e.g. `cs2.exe`) of the programs with a visible window,
+/// sorted, without this app. For the user to pick the process to close; read
+/// only when they ask for the list.
+pub fn windowed_programs() -> Vec<String> {
+    unsafe extern "system" fn visit(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let pids = unsafe { &mut *(lparam.0 as *mut BTreeSet<u32>) };
+        let shown = unsafe {
+            IsWindowVisible(hwnd).as_bool()
+                && GetWindow(hwnd, GW_OWNER).is_err()
+                && GetWindowTextLengthW(hwnd) > 0
+                && GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 == 0
+                && !is_cloaked(hwnd)
+        };
+        if shown {
+            let mut pid = 0;
+            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+            pids.insert(pid);
+        }
+        true.into()
+    }
+
+    let mut pids: BTreeSet<u32> = BTreeSet::new();
+    let _ = unsafe { EnumWindows(Some(visit), LPARAM(&raw mut pids as isize)) };
+    pids.remove(&unsafe { GetCurrentProcessId() });
+
+    let mut names: Vec<String> = running_processes()
+        .into_iter()
+        .filter(|(pid, name)| {
+            pids.contains(pid) && !NOT_APPLICATIONS.contains(&name.to_lowercase().as_str())
+        })
+        .map(|(_, name)| name)
+        .collect();
+    names.sort_by_cached_key(|name| name.to_lowercase());
+    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    names
 }
 
 /// IDs of the processes in a job.

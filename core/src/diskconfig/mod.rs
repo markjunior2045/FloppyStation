@@ -55,6 +55,12 @@ impl DiskConfig {
     pub fn to_toml(&self) -> String {
         format::to_toml(self)
     }
+
+    /// Checks a configuration built from fields (e.g. in the UI) the same way
+    /// as one read from a disk, and returns it as it would be read back.
+    pub fn validated(&self) -> Result<Self, ParseError> {
+        Self::parse(self.to_toml().as_bytes())
+    }
 }
 
 /// Why a configuration file could not be used.

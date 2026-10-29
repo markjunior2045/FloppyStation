@@ -6,12 +6,14 @@ use std::path::{Path, PathBuf};
 use toml::Table;
 use windows::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_ELEVATION_REQUIRED, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
+    HLOCAL, LocalFree,
 };
 use windows::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
 use windows::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CONSOLE, CREATE_SUSPENDED, CreateProcessW,
     PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, ResumeThread, STARTUPINFOW,
 };
+use windows::Win32::UI::Shell::CommandLineToArgvW;
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 
 use super::write_line;
@@ -150,6 +152,47 @@ impl ExeGame {
     }
 }
 
+/// The arguments as one line, as a user would type them: quoted where
+/// needed, so [`split_args`] gives them back.
+pub fn join_args(args: &[String]) -> String {
+    let mut line = String::new();
+    for arg in args {
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        quote_arg(arg, &mut line);
+    }
+    line
+}
+
+/// Splits a line of arguments typed by the user, the way programs split
+/// their command line (`"two words"` is one argument).
+pub fn split_args(line: &str) -> Vec<String> {
+    if line.trim().is_empty() {
+        return Vec::new();
+    }
+    // The first item is taken as the program and follows other rules: put
+    // a placeholder there.
+    let line = HSTRING::from(format!("x {line}"));
+    let mut count = 0;
+    let argv = unsafe { CommandLineToArgvW(&line, &mut count) };
+    if argv.is_null() {
+        return line
+            .to_string()
+            .split_whitespace()
+            .skip(1)
+            .map(str::to_owned)
+            .collect();
+    }
+    let args = (1..count.max(0) as usize)
+        .map(|i| unsafe { (*argv.add(i)).to_string() }.unwrap_or_default())
+        .collect();
+    unsafe {
+        let _ = LocalFree(Some(HLOCAL(argv.cast())));
+    }
+    args
+}
+
 /// Builds a command line that programs split back into `path` and `args`,
 /// following the Microsoft C runtime rules.
 fn command_line(path: &Path, args: &[String]) -> String {
@@ -192,6 +235,16 @@ fn quote_arg(arg: &str, out: &mut String) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn splits_and_joins_arguments() {
+        use super::{join_args, split_args};
+        let args = split_args(r#"-fullscreen  "C:\My Saves" -name="a b""#);
+        assert_eq!(args, ["-fullscreen", r"C:\My Saves", "-name=a b"]);
+        assert_eq!(split_args(&join_args(&args)), args);
+        assert_eq!(split_args("   "), Vec::<String>::new());
+        assert_eq!(join_args(&["a".into(), "b c".into()]), r#"a "b c""#);
+    }
+
     use super::*;
 
     #[test]

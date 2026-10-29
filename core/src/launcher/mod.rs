@@ -8,6 +8,8 @@
 
 mod process;
 
+pub use process::windowed_programs;
+
 use std::collections::BTreeSet;
 use std::fmt;
 use std::time::Duration;

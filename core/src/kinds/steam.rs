@@ -1,5 +1,10 @@
 //! `kind = "steam"`: a Steam game, launched by its AppID.
 
+mod library;
+mod vdf;
+
+pub use library::{LibraryGame, installed_games};
+
 use toml::Table;
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Com::{

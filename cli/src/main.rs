@@ -36,6 +36,10 @@ usage: floppy-station-cli [options]
            list the approved disk configs
        floppy-station-cli trust revoke <hash>
            remove an approval (the start of the hash is enough)
+       floppy-station-cli list steam
+           list the installed Steam games
+       floppy-station-cli list apps
+           list the programs with an open window
 
 options:
   --drive <letter>       drive to watch, overriding the settings file
@@ -57,6 +61,8 @@ enum Command {
     Trust,
     TrustList,
     TrustRevoke(String),
+    ListSteam,
+    ListApps,
 }
 
 struct Args {
@@ -133,6 +139,13 @@ fn parse_args() -> Result<Args, String> {
                     Some(other) => return Err(format!("unknown trust command: {other}")),
                 };
             }
+            "list" => {
+                args.command = match iter.next().as_deref() {
+                    Some("steam") => Command::ListSteam,
+                    Some("apps") => Command::ListApps,
+                    _ => return Err("list needs steam or apps".into()),
+                };
+            }
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown argument: {other}")),
         }
@@ -184,6 +197,18 @@ fn main() -> ExitCode {
         Command::Trust => return trust_disk(settings.drive),
         Command::TrustList => return trust_list(),
         Command::TrustRevoke(prefix) => return trust_revoke(prefix),
+        Command::ListSteam => {
+            for game in floppy_station_core::kinds::steam::installed_games() {
+                println!("{:>8}  {}", game.app_id, game.name);
+            }
+            return ExitCode::SUCCESS;
+        }
+        Command::ListApps => {
+            for name in floppy_station_core::launcher::windowed_programs() {
+                println!("{name}");
+            }
+            return ExitCode::SUCCESS;
+        }
     }
 
     println!(
