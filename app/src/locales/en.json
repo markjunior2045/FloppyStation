@@ -76,7 +76,7 @@
   "ui.prefs.unplug.ignore": "Leave the game open",
   "ui.prefs.display": "Display and startup",
   "ui.prefs.loading_box": "Show the loading box",
-  "ui.prefs.notifications": "Show Windows notifications when the box isn't showing",
+  "ui.prefs.notifications": "Show Windows notifications",
   "ui.form.required": "* required",
   "ui.button.refresh": "Refresh",
   "ui.disk.protected_title": "This disk is write protected.",

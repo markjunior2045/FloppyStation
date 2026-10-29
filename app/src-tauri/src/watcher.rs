@@ -267,10 +267,9 @@ impl Watcher {
         self.record(events::from_game(event));
         let app = &self.inner.app;
         let loading = app.state::<LoadingBox>();
-        // The box only follows a disk it showed up for. Without it, what
-        // needs the user becomes a notification.
+        self.notify(event);
+        // The box only follows a disk it showed up for.
         if !loading.is_open() {
-            self.notify(event);
             return;
         }
         let message = |key| loading.show(app, BoxState::message(key), Some(BOX_MESSAGE));
@@ -297,9 +296,9 @@ impl Watcher {
         }
     }
 
-    /// Shows a Windows notification for the events that need the user and
-    /// that the loading box isn't showing. Clicking it does nothing, so the
-    /// text says where to look.
+    /// Shows a Windows notification, if the user wants them, for the events
+    /// that need the user. Clicking it does nothing, so the text says where
+    /// to look.
     fn notify(&self, event: &GameEvent) {
         if !self.settings().notifications {
             return;

@@ -55,9 +55,9 @@ pub struct Settings {
     /// Quiet detection: an empty drive is waited on (one click every ~20 s,
     /// light on) instead of checked every `empty_poll_interval_ms`.
     pub quiet_detection: bool,
-    /// Whether what needs the user while the loading box isn't showing it
-    /// (an unapproved program, a game that couldn't start or close) becomes
-    /// a Windows notification. Off by default.
+    /// Whether what needs the user (an unapproved program, a game that
+    /// couldn't start or close) also becomes a Windows notification. Off by
+    /// default.
     pub notifications: bool,
 }
 
