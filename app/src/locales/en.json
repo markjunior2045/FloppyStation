@@ -66,7 +66,7 @@
   "ui.prefs.ms_empty": "ms when empty",
   "ui.prefs.click_hint": "An empty drive clicks on every check. Longer intervals click less but notice disks later.",
   "ui.prefs.quiet": "Wait quietly for a disk when the drive is empty",
-  "ui.prefs.quiet_hint": "The drive clicks only every ~20 s and its light stays on. Disks are noticed as soon as they go in.",
+  "ui.prefs.quiet_hint": "The drive clicks only every ~20 s and its light stays on. Disks are noticed as soon as they go in. While the drive is empty, opening it in Explorer waits for a disk.",
   "ui.prefs.removal": "When the disk is removed",
   "ui.prefs.removal.close": "Ask the game to close, force it after",
   "ui.prefs.seconds": "s",
