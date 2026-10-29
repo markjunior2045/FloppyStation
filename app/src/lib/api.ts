@@ -101,6 +101,7 @@ export interface Settings {
   detection_enabled: boolean;
   show_loading_box: boolean;
   quiet_detection: boolean;
+  notifications: boolean;
 }
 
 export const api = {

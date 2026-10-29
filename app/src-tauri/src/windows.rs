@@ -45,7 +45,8 @@ pub fn open_main_on(app: &AppHandle, tab: &'static str) {
 }
 
 /// Opens the main window, or brings it to the front if it is open. Only
-/// called on the user's request: the app never opens windows by itself.
+/// called on the user's request, or to welcome them on the first run: the
+/// app never opens windows by itself otherwise.
 pub fn open_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN) {
         let _ = window.unminimize();
@@ -77,21 +78,13 @@ pub fn open_main(app: &AppHandle) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct BoxState {
     pub message: Option<&'static str>,
-    /// The disk is write protected, so it can't be configured.
-    pub write_protected: bool,
 }
 
 impl BoxState {
-    pub const READING: Self = Self {
-        message: None,
-        write_protected: false,
-    };
+    pub const READING: Self = Self { message: None };
 
     pub fn message(key: &'static str) -> Self {
-        Self {
-            message: Some(key),
-            write_protected: false,
-        }
+        Self { message: Some(key) }
     }
 }
 

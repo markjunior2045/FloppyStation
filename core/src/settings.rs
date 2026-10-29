@@ -53,6 +53,10 @@ pub struct Settings {
     /// Quiet detection: an empty drive is waited on (one click every ~20 s,
     /// light on) instead of checked every `empty_poll_interval_ms`.
     pub quiet_detection: bool,
+    /// Whether what needs the user while the loading box isn't showing it
+    /// (an unapproved program, a game that couldn't start or close) becomes
+    /// a Windows notification. Off by default.
+    pub notifications: bool,
 }
 
 /// What to do with a game when its disk is removed.
@@ -114,6 +118,7 @@ impl Default for Settings {
             detection_enabled: true,
             show_loading_box: true,
             quiet_detection: true,
+            notifications: false,
         }
     }
 }
@@ -275,6 +280,7 @@ mod tests {
             detection_enabled = false
             show_loading_box = false
             quiet_detection = false
+            notifications = true
             "#,
         )
         .unwrap();
@@ -292,6 +298,7 @@ mod tests {
         assert!(!settings.detection_enabled);
         assert!(!settings.show_loading_box);
         assert!(!settings.quiet_detection);
+        assert!(settings.notifications);
     }
 
     #[test]

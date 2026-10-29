@@ -71,7 +71,7 @@
         <span class="ok">{t("ui.welcome.found", { name: app.disk.config.name })}</span>
       {:else if app.disk.code === "disk_not_configured"}
         <span>{t("disk_not_configured")}</span>
-        <button disabled={app.disk.writeProtected === true} onclick={() => openTab("disk")}>
+        <button onclick={() => openTab("disk")}>
           {t("ui.button.configure")}
         </button>
       {:else}

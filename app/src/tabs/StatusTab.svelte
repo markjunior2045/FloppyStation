@@ -114,7 +114,7 @@
         <div>{target()} - {closes()}</div>
       </div>
       <span class="spacer"></span>
-      <button disabled={disk.writeProtected === true} onclick={() => openTab("disk")}>
+      <button onclick={() => openTab("disk")}>
         {t("ui.button.edit")}
       </button>
     </div>
@@ -123,7 +123,7 @@
       <img class="big-icon" src={icon} alt="" />
       <div>{t("disk_not_configured")}</div>
       <span class="spacer"></span>
-      <button disabled={disk.writeProtected === true} onclick={() => openTab("disk")}>
+      <button onclick={() => openTab("disk")}>
         {t("ui.button.configure")}
       </button>
     </div>

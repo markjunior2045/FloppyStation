@@ -27,7 +27,8 @@
   const config = $derived(disk?.config ?? null);
   const configurable = $derived(disk !== null && CONFIGURABLE.includes(disk.code));
   const diskKey = $derived(disk ? (config?.hash ?? disk.code) : null);
-  const disabled = $derived(busy !== null || disk?.writeProtected === true);
+  const writeProtected = $derived(disk?.writeProtected === true);
+  const disabled = $derived(busy !== null);
   const complete = $derived(
     form.name.trim() !== "" &&
       (form.kind === "steam" ? (form.appId ?? 0) > 0 : form.path.trim() !== ""),
@@ -39,9 +40,12 @@
     );
   });
 
-  onMount(async () => {
+  onMount(loadGames);
+
+  async function loadGames() {
+    games = null;
     games = await api.steamGames();
-  });
+  }
 
   // A new disk (or a new configuration on it) fills the form again.
   $effect(() => {
@@ -131,7 +135,7 @@
         <div class:warn={!configurable}>{summary()}</div>
       </div>
       <span class="spacer"></span>
-      {#if config && !confirmingRemove}
+      {#if config && !confirmingRemove && !writeProtected}
         <button {disabled} onclick={() => (confirmingRemove = true)}>{t("ui.button.remove_config")}</button>
       {/if}
     </div>
@@ -142,14 +146,20 @@
         <button onclick={() => (confirmingRemove = false)}>{t("ui.button.cancel")}</button>
       </div>
     {/if}
-    {#if disk.writeProtected}
-      <div class="muted note"><Icon name="warn" /> {t("ui.disk.write_protected")}</div>
-    {:else if !configurable}
+    {#if !configurable}
       <div class="muted note">{t("ui.disk.cant_configure")}</div>
     {/if}
   </fieldset>
 
-  {#if configurable}
+  {#if writeProtected}
+    <div class="banner protected">
+      <Icon name="warn" size={24} />
+      <div>
+        <div class="title">{t("ui.disk.protected_title")}</div>
+        <div>{t("ui.disk.protected_hint")}</div>
+      </div>
+    </div>
+  {:else if configurable}
     <fieldset>
       <legend>{t("ui.form.game")}</legend>
       <div class="form-grid">
@@ -161,13 +171,18 @@
 
         {#if form.kind === "steam"}
           <label for="search">{t("ui.form.game_label")}</label>
-          <input
-            id="search"
-            type="text"
-            placeholder={t("ui.form.search")}
-            bind:value={form.search}
-            {disabled}
-          />
+          <div class="with-button">
+            <input
+              id="search"
+              type="text"
+              placeholder={t("ui.form.search")}
+              bind:value={form.search}
+              {disabled}
+            />
+            <button disabled={disabled || games === null} onclick={loadGames}>
+              {t("ui.button.refresh")}
+            </button>
+          </div>
           <span></span>
           <div class="list" role="listbox" aria-label={t("ui.form.game_label")}>
             {#if games === null}
@@ -192,13 +207,13 @@
               {/each}
             {/if}
           </div>
-          <label for="app-id">{t("ui.form.app_id")}</label>
+          <label for="app-id">{t("ui.form.app_id")}<span class="required">*</span></label>
           <div class="with-button">
             <input id="app-id" type="number" min="1" class="app-id" bind:value={form.appId} {disabled} />
             <span class="muted hint">{t("ui.form.app_id_hint")}</span>
           </div>
         {:else}
-          <label for="path">{t("ui.form.program")}</label>
+          <label for="path">{t("ui.form.program")}<span class="required">*</span></label>
           <div class="with-button">
             <input id="path" type="text" bind:value={form.path} {disabled} />
             <button {disabled} onclick={browse}>{t("ui.button.browse")}</button>
@@ -207,7 +222,7 @@
           <input id="args" type="text" bind:value={form.args} {disabled} />
         {/if}
 
-        <label for="name">{t("ui.form.name")}</label>
+        <label for="name">{t("ui.form.name")}<span class="required">*</span></label>
         <input id="name" type="text" maxlength="100" bind:value={form.name} {disabled} />
 
         <label for="process">{t("ui.form.close")}</label>
@@ -233,6 +248,8 @@
     </fieldset>
 
     <div class="row spread">
+      <span class="muted">{t("ui.form.required")}</span>
+      <span class="spacer"></span>
       <button disabled={disabled || !complete} onclick={showPreview}>{t("ui.button.preview")}</button>
       <button disabled={disabled || !complete} onclick={write}>{t("ui.button.write")}</button>
     </div>
@@ -280,6 +297,16 @@
 
   .note {
     margin-top: 4px;
+  }
+
+  .required {
+    color: var(--warn);
+    margin-left: 2px;
+  }
+
+  .protected {
+    justify-content: flex-start;
+    gap: 10px;
   }
 
   .app-id {

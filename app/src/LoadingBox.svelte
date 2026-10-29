@@ -10,8 +10,6 @@
   interface BoxState {
     /** Key of the message in the language file; none while reading. */
     message: string | null;
-    /** The disk is write protected, so it can't be configured. */
-    write_protected: boolean;
   }
 
   // The button each message offers, if any, and the tab it opens.
@@ -26,7 +24,7 @@
   // Messages that are warnings rather than information.
   const WARNINGS = new Set(["box.untrusted", "box.missing", "box.failed", "box.unusable"]);
 
-  let state: BoxState | null = $state({ message: null, write_protected: false });
+  let state: BoxState | null = $state({ message: null });
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
@@ -70,10 +68,7 @@
       </div>
       {#if BUTTONS[state.message]}
         <div class="actions">
-          <button
-            disabled={state.message === "box.blank" && state.write_protected}
-            onclick={() => openMain(BUTTONS[state!.message!].tab)}
-          >
+          <button onclick={() => openMain(BUTTONS[state!.message!].tab)}>
             {t(BUTTONS[state.message].label)}
           </button>
         </div>

@@ -203,8 +203,17 @@
         <label for="pref-box">{t("ui.prefs.loading_box")}</label>
       </div>
       <div class="field-row">
+        <input
+          type="checkbox"
+          id="pref-notify"
+          checked={settings.notifications}
+          onchange={(event) => save({ notifications: event.currentTarget.checked })}
+        />
+        <label for="pref-notify">{t("ui.prefs.notifications")}</label>
+      </div>
+      <div class="field-row">
         <input type="checkbox" id="pref-startup" disabled />
-        <label for="pref-startup">{t("ui.prefs.startup")} <span class="muted">{t("ui.prefs.startup_later")}</span></label>
+        <label for="pref-startup">{t("ui.prefs.startup")}{" "}<span class="muted">{t("ui.prefs.startup_later")}</span></label>
       </div>
     </fieldset>
   </div>

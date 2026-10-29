@@ -277,14 +277,7 @@ impl Watcher {
         match event {
             GameEvent::DiskRead { inspection, .. } => match &inspection.content {
                 DiskContent::Configured { .. } => {}
-                DiskContent::NotConfigured => loading.show(
-                    app,
-                    BoxState {
-                        write_protected: inspection.write_protected == Some(true),
-                        ..BoxState::message("box.blank")
-                    },
-                    Some(BOX_MESSAGE),
-                ),
+                DiskContent::NotConfigured => message("box.blank"),
                 DiskContent::UnsupportedVersion(_) => message("box.newer"),
                 DiskContent::NoDisk => loading.close(app),
                 _ => message("box.unusable"),
@@ -308,6 +301,9 @@ impl Watcher {
     /// that the loading box isn't showing. Clicking it does nothing, so the
     /// text says where to look.
     fn notify(&self, event: &GameEvent) {
+        if !self.settings().notifications {
+            return;
+        }
         let text = match event {
             GameEvent::Untrusted { drive, .. } => {
                 t("notify.untrusted", &[("drive", &drive.to_string())])

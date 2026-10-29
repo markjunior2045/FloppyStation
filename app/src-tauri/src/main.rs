@@ -42,7 +42,13 @@ fn main() {
             // Catch up with what happened while the tray was being created.
             app.state::<Tray>()
                 .update(&watcher.line(), watcher.detection());
+            let first_run = watcher.state().first_run;
             app.manage(watcher);
+            // The app starts in the tray, except the very first time, when
+            // the window welcomes the user.
+            if first_run {
+                windows::open_main(app.handle());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
