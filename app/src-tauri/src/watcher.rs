@@ -320,6 +320,12 @@ pub fn get_settings(watcher: State<'_, Watcher>) -> Settings {
     watcher.settings()
 }
 
+/// The settings a fresh install starts with.
+#[tauri::command]
+pub fn default_settings() -> Settings {
+    Settings::default()
+}
+
 /// Saves and applies the settings; fails with a `settings_*` code.
 #[tauri::command]
 pub fn save_settings(watcher: State<'_, Watcher>, settings: Settings) -> Result<(), &'static str> {

@@ -41,6 +41,7 @@ fn main() {
             watcher::app_state,
             watcher::app_version,
             watcher::get_settings,
+            watcher::default_settings,
             watcher::save_settings,
             watcher::set_detection,
             watcher::removable_drives,

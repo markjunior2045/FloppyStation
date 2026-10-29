@@ -67,6 +67,7 @@ export const api = {
   recentEvents: () => invoke<AppEvent[]>("recent_events"),
   version: () => invoke<string>("app_version"),
   settings: () => invoke<Settings>("get_settings"),
+  defaultSettings: () => invoke<Settings>("default_settings"),
   /** Rejects with a `settings_*` code. */
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   setDetection: (enabled: boolean) => invoke<void>("set_detection", { enabled }),

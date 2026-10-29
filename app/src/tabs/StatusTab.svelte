@@ -21,10 +21,16 @@
   } = $props();
 
   let bannerClosed = $state(false);
+  let activity: HTMLElement | undefined = $state();
 
   const disk = $derived(app.disk);
   const config = $derived(disk?.config ?? null);
-  const recent = $derived(events.slice(-6).reverse());
+  // Oldest first, like a log; the box keeps the newest in view.
+  const recent = $derived(events.slice(-50));
+
+  $effect(() => {
+    if (activity && recent.length) activity.scrollTop = activity.scrollHeight;
+  });
 
   function target(): string {
     if (!config) return "";
@@ -158,7 +164,7 @@
 </div>
 
 <p class="activity-title">{t("ui.activity")}</p>
-<div class="activity">
+<div class="activity" bind:this={activity}>
   {#each recent as event (event.seq)}
     <div class="event">
       <span class="muted">{time(event.at)}</span>

@@ -34,6 +34,16 @@
     onSaved(await api.settings());
   }
 
+  let confirmingReset = $state(false);
+
+  // Keeps the drive (a choice about the hardware, not a preference) and
+  // detection (switched from the tray too).
+  async function restoreDefaults() {
+    confirmingReset = false;
+    const defaults = await api.defaultSettings();
+    await save({ ...defaults, drive: settings.drive, detection_enabled: settings.detection_enabled });
+  }
+
   function number(event: Event): number {
     return Number((event.currentTarget as HTMLInputElement).value);
   }
@@ -188,7 +198,24 @@
   </div>
 </div>
 
+<div class="reset">
+  {#if confirmingReset}
+    <span>{t("ui.prefs.reset_confirm")}</span>
+    <button onclick={restoreDefaults}>{t("ui.button.restore")}</button>
+    <button onclick={() => (confirmingReset = false)}>{t("ui.button.cancel")}</button>
+  {:else}
+    <button onclick={() => (confirmingReset = true)}>{t("ui.button.restore_defaults")}</button>
+  {/if}
+</div>
+
 <style>
+  .reset {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+  }
+
   .prefs {
     display: grid;
     grid-template-columns: 1fr 1fr;

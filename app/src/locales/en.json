@@ -17,6 +17,9 @@
   "ui.button.configure": "Configure this disk",
   "ui.button.edit": "Edit...",
   "ui.button.review": "Review...",
+  "ui.button.restore_defaults": "Restore defaults",
+  "ui.button.restore": "Restore",
+  "ui.button.cancel": "Cancel",
 
   "ui.status.drive": "Drive",
   "ui.status.disk": "Disk",
@@ -75,6 +78,7 @@
   "ui.prefs.startup": "Start with Windows",
   "ui.prefs.startup_later": "(in a later version)",
   "ui.prefs.save_failed": "Couldn't save the preferences: {error}",
+  "ui.prefs.reset_confirm": "Restore all preferences to their defaults? The drive stays the same.",
 
   "tray.tooltip": "Floppy Station - {state}",
   "tray.open": "Open Floppy Station",
