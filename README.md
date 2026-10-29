@@ -22,7 +22,7 @@ touches the drive you choose.
 
 ## Install
 
-Download `Floppy Station_<version>_x64-setup.exe` from the
+Download `Floppy-Station_<version>_x64-setup.exe` from the
 [releases page](https://github.com/markjunior2045/FloppyStation/releases)
 and run it. It installs for your user only, in
 `%LOCALAPPDATA%\Floppy Station`, and doesn't ask for administrator rights.
