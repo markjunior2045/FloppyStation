@@ -13,6 +13,37 @@ pub const MAIN: &str = "main";
 /// Label of the loading box.
 pub const LOADING: &str = "loading";
 
+/// Tabs of the main window that other places can open it on.
+pub const TABS: &[&str] = &["status", "disk", "approvals", "prefs"];
+
+/// The tab a main window being created should open on.
+#[derive(Default)]
+pub struct MainTab(Mutex<Option<&'static str>>);
+
+impl MainTab {
+    /// The tab to open on, once.
+    pub fn take(&self) -> Option<&'static str> {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+    }
+}
+
+/// Opens the main window on `tab` (one of [`TABS`]), or switches the open
+/// window to it.
+pub fn open_main_on(app: &AppHandle, tab: &'static str) {
+    if app.get_webview_window(MAIN).is_some() {
+        let _ = app.emit_to(MAIN, "open-tab", tab);
+    } else {
+        *app.state::<MainTab>()
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(tab);
+    }
+    open_main(app);
+}
+
 /// Opens the main window, or brings it to the front if it is open. Only
 /// called on the user's request: the app never opens windows by itself.
 pub fn open_main(app: &AppHandle) {
@@ -46,13 +77,21 @@ pub fn open_main(app: &AppHandle) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct BoxState {
     pub message: Option<&'static str>,
+    /// The disk is write protected, so it can't be configured.
+    pub write_protected: bool,
 }
 
 impl BoxState {
-    pub const READING: Self = Self { message: None };
+    pub const READING: Self = Self {
+        message: None,
+        write_protected: false,
+    };
 
     pub fn message(key: &'static str) -> Self {
-        Self { message: Some(key) }
+        Self {
+            message: Some(key),
+            write_protected: false,
+        }
     }
 }
 

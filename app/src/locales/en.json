@@ -96,6 +96,10 @@
   "tray.not_configured": "{drive} disk not configured",
   "tray.unusable": "{drive} disk can't be used",
 
+  "notify.untrusted": "The disk in {drive} wants to run a program you haven't approved. Open Floppy Station to review it.",
+  "notify.not_found": "The program on the disk in {drive} isn't installed on this PC.",
+  "notify.launch_failed": "Couldn't start {name}. Open Floppy Station for details.",
+  "notify.close_failed": "{name} could not be closed. It may be running as administrator.",
   "box.reading": "Reading floppy disk...",
   "box.blank": "This disk has no game yet.",
   "box.untrusted": "This disk wants to run a program you haven't approved.",
@@ -169,5 +173,10 @@
   "trust_appdata_unavailable": "Floppy Station can't find its settings folder.",
   "trust_invalid": "The approved programs file is damaged; no program is approved until it is fixed.",
   "trust_io": "Floppy Station can't read or save the approved programs: {detail}",
-  "trust_serialize": "Floppy Station couldn't save the approved programs."
+  "trust_serialize": "Floppy Station couldn't save the approved programs.",
+  "trust_not_found": "This approval no longer exists.",
+  "disk_written": "{name} written to the disk in {drive}.",
+  "disk_config_removed": "The game was removed from the disk in {drive}.",
+  "trust_approved": "{name} approved.",
+  "trust_revoked": "{name}: approval revoked."
 }

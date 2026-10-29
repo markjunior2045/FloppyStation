@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use floppy_station_core::controller::GameEvent;
 use floppy_station_core::diskconfig::DiskContent;
-use floppy_station_core::floppy::FloppyEvent;
+use floppy_station_core::floppy::{DriveLetter, FloppyEvent};
 use floppy_station_core::kinds::GameTarget;
 use floppy_station_core::launcher::{CloseMode, CloseOutcome, LaunchError};
 use floppy_station_core::settings::SettingsError;
@@ -111,6 +111,26 @@ pub fn from_settings_error(error: &SettingsError) -> AppEvent {
     AppEvent::new(error.code()).with("detail", error)
 }
 
+/// A configuration written to the disk from the Disk tab.
+pub fn disk_written(drive: DriveLetter, name: &str) -> AppEvent {
+    game("disk_written", drive, name)
+}
+
+/// The configuration removed from the disk from the Disk tab.
+pub fn disk_config_removed(drive: DriveLetter) -> AppEvent {
+    AppEvent::new("disk_config_removed").with("drive", drive)
+}
+
+/// A program approved from the Approvals tab.
+pub fn trust_approved(name: &str) -> AppEvent {
+    AppEvent::new("trust_approved").with("name", name)
+}
+
+/// An approval revoked from the Approvals tab.
+pub fn trust_revoked(name: &str) -> AppEvent {
+    AppEvent::new("trust_revoked").with("name", name)
+}
+
 fn game(code: &'static str, drive: impl ToString, name: &str) -> AppEvent {
     AppEvent::new(code).with("drive", drive).with("name", name)
 }
@@ -149,7 +169,7 @@ mod tests {
     use floppy_station_core::diskconfig::{
         ConfigError, ConfigHash, DiskConfig, DiskInspection, WriteError,
     };
-    use floppy_station_core::floppy::{DriveLetter, InsertOrigin, MediaInfo, RemovalCause};
+    use floppy_station_core::floppy::{InsertOrigin, MediaInfo, RemovalCause};
     use floppy_station_core::settings::Settings;
 
     use super::*;
@@ -269,6 +289,10 @@ mod tests {
         floppy.extend(games.iter().map(from_game));
         floppy.push(detection(true));
         floppy.push(detection(false));
+        floppy.push(disk_written(drive, "Game"));
+        floppy.push(disk_config_removed(drive));
+        floppy.push(trust_approved("Game"));
+        floppy.push(trust_revoked("Game"));
         floppy.push(from_settings_error(&SettingsError::AppDataUnavailable));
         floppy.push(from_settings_error(
             &Settings::parse("drive = ").unwrap_err(),

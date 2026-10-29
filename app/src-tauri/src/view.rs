@@ -4,9 +4,9 @@
 use std::collections::BTreeMap;
 
 use floppy_station_core::controller::GameEvent;
-use floppy_station_core::diskconfig::DiskContent;
+use floppy_station_core::diskconfig::{ConfigHash, DiskConfig, DiskContent};
 use floppy_station_core::floppy::{DriveLetter, FloppyEvent};
-use floppy_station_core::kinds::GameTarget;
+use floppy_station_core::kinds::{GameTarget, exe};
 use floppy_station_core::trust;
 use serde::Serialize;
 
@@ -31,6 +31,8 @@ pub struct AppState {
     pub launched: Option<String>,
     /// Problem loading the settings at startup, as a code.
     pub settings_error: Option<&'static str>,
+    /// No settings saved yet: the window shows the welcome.
+    pub first_run: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +53,8 @@ pub struct ConfigView {
     pub app_id: Option<u32>,
     pub path: Option<String>,
     pub args: Vec<String>,
+    /// `args` as one line, as typed in the form.
+    pub args_line: String,
     pub process: Option<String>,
     pub hash: String,
     /// Whether a program (`kind = "exe"`) is approved on this PC; always
@@ -72,6 +76,8 @@ pub struct DriveView {
     connected: Option<bool>,
     reading: bool,
     disk: Option<DiskView>,
+    /// The configuration of the disk in the drive, for approving it.
+    config: Option<(DiskConfig, ConfigHash)>,
     game: Option<GameView>,
     launched: Option<String>,
 }
@@ -84,9 +90,49 @@ impl DriveView {
             connected: None,
             reading: false,
             disk: None,
+            config: None,
             game: None,
             launched: None,
         }
+    }
+
+    /// Whether a disk is in and read, so it can be written to.
+    pub fn has_disk(&self) -> bool {
+        self.drive_status() == "present"
+    }
+
+    /// The configuration of the disk in the drive, if it has a valid one.
+    pub fn config(&self) -> Option<&(DiskConfig, ConfigHash)> {
+        self.config.as_ref()
+    }
+
+    /// The disk's new content after the app wrote or removed its
+    /// configuration.
+    pub fn set_content(&mut self, content: &DiskContent) {
+        let write_protected = self.disk.as_ref().and_then(|disk| disk.write_protected);
+        self.set_disk(content, write_protected);
+    }
+
+    /// Checks again whether the disk's program is approved, after an
+    /// approval was added or revoked.
+    pub fn refresh_approval(&mut self) {
+        if let (Some(view), Some((config, hash))) = (
+            self.disk.as_mut().and_then(|disk| disk.config.as_mut()),
+            &self.config,
+        ) {
+            view.approved = is_approved(config, hash);
+        }
+    }
+
+    fn set_disk(&mut self, content: &DiskContent, write_protected: Option<bool>) {
+        self.config = match content {
+            DiskContent::Configured { config, hash } => Some((config.clone(), *hash)),
+            _ => None,
+        };
+        self.disk = match content {
+            DiskContent::NoDisk => None,
+            content => Some(disk_view(content, write_protected)),
+        };
     }
 
     /// Starts over, for another drive or after detection was turned on or
@@ -116,10 +162,7 @@ impl DriveView {
         match event {
             GameEvent::DiskRead { inspection, .. } => {
                 self.reading = false;
-                self.disk = match &inspection.content {
-                    DiskContent::NoDisk => None,
-                    content => Some(disk_view(content, inspection.write_protected)),
-                };
+                self.set_disk(&inspection.content, inspection.write_protected);
                 return;
             }
             GameEvent::Untrusted { .. } => {
@@ -150,6 +193,7 @@ impl DriveView {
             game: self.game.clone(),
             launched: self.launched.clone(),
             settings_error,
+            first_run: false,
         }
     }
 
@@ -194,7 +238,16 @@ impl DriveView {
     fn clear_disk(&mut self) {
         self.reading = false;
         self.disk = None;
+        self.config = None;
         self.launched = None;
+    }
+}
+
+/// Programs need approval; Steam games don't.
+fn is_approved(config: &DiskConfig, hash: &ConfigHash) -> bool {
+    match config.target {
+        GameTarget::Exe(_) => trust::is_approved(hash),
+        _ => true,
     }
 }
 
@@ -210,11 +263,9 @@ fn disk_view(content: &DiskContent, write_protected: Option<bool>) -> DiskView {
                     game.args.clone(),
                 ),
             };
-            let approved = match config.target {
-                GameTarget::Exe(_) => trust::is_approved(hash),
-                _ => true,
-            };
+            let approved = is_approved(config, hash);
             Some(ConfigView {
+                args_line: exe::join_args(&args),
                 name: config.name.clone(),
                 kind: config.target.kind(),
                 app_id,

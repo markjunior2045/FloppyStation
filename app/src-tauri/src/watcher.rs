@@ -14,14 +14,16 @@ use floppy_station_core::diskconfig::DiskContent;
 use floppy_station_core::floppy::{
     self, DriveLetter, FloppyEvent, HelperWaiter, InsertOrigin, Monitor, Poller, ProbeKind,
 };
-use floppy_station_core::launcher::LaunchError;
+use floppy_station_core::launcher::{CloseOutcome, LaunchError};
 use floppy_station_core::settings::Settings;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::events::{self, AppEvent};
+use crate::locale::t;
 use crate::tray::Tray;
 use crate::view::{AppState, DriveView};
-use crate::windows::{self, BoxState, LoadingBox};
+use crate::windows::{self, BoxState, LoadingBox, MainTab};
 
 /// Events kept for a window opened later.
 const RECENT_EVENTS: usize = 200;
@@ -48,6 +50,8 @@ struct Inner {
     controller_settings: Mutex<Option<Settings>>,
     /// Problem loading the settings at startup, as a code.
     settings_error: Option<&'static str>,
+    /// No settings file yet: the window welcomes the user until they're done.
+    first_run: AtomicBool,
     detection: AtomicBool,
     /// Present while detection is on; dropping it stops checking the drive.
     monitor: Mutex<Option<Monitor>>,
@@ -70,12 +74,14 @@ impl Watcher {
     /// Loads the settings and, if detection is on, starts watching the
     /// drive.
     pub fn start(app: AppHandle) -> Result<Self, Box<dyn Error>> {
+        let first_run = Settings::default_path().is_ok_and(|path| !path.exists());
         let (settings, error) = Settings::load_or_default();
         let (floppy_tx, floppy_rx) = mpsc::channel();
         let (game_tx, game_rx) = mpsc::channel();
         let watcher = Self {
             inner: Arc::new(Inner {
                 app,
+                first_run: AtomicBool::new(first_run),
                 detection: AtomicBool::new(settings.detection_enabled),
                 view: Mutex::new(DriveView::new(settings.drive, settings.detection_enabled)),
                 settings: Mutex::new(settings.clone()),
@@ -205,7 +211,22 @@ impl Watcher {
     }
 
     pub fn state(&self) -> AppState {
-        lock(&self.inner.view).state(self.inner.settings_error)
+        AppState {
+            first_run: self.inner.first_run.load(Ordering::SeqCst),
+            ..lock(&self.inner.view).state(self.inner.settings_error)
+        }
+    }
+
+    /// Ends the welcome: saves the settings, so the next start isn't a first
+    /// run any more.
+    pub fn finish_welcome(&self) -> Result<(), &'static str> {
+        let path = Settings::default_path().map_err(|error| error.code())?;
+        self.settings()
+            .save_to(&path)
+            .map_err(|error| error.code())?;
+        self.inner.first_run.store(false, Ordering::SeqCst);
+        self.publish_state();
+        Ok(())
     }
 
     fn start_monitor(&self) -> std::io::Result<()> {
@@ -246,15 +267,24 @@ impl Watcher {
         self.record(events::from_game(event));
         let app = &self.inner.app;
         let loading = app.state::<LoadingBox>();
-        // The box only follows a disk it showed up for.
+        // The box only follows a disk it showed up for. Without it, what
+        // needs the user becomes a notification.
         if !loading.is_open() {
+            self.notify(event);
             return;
         }
         let message = |key| loading.show(app, BoxState::message(key), Some(BOX_MESSAGE));
         match event {
             GameEvent::DiskRead { inspection, .. } => match &inspection.content {
                 DiskContent::Configured { .. } => {}
-                DiskContent::NotConfigured => message("box.blank"),
+                DiskContent::NotConfigured => loading.show(
+                    app,
+                    BoxState {
+                        write_protected: inspection.write_protected == Some(true),
+                        ..BoxState::message("box.blank")
+                    },
+                    Some(BOX_MESSAGE),
+                ),
                 DiskContent::UnsupportedVersion(_) => message("box.newer"),
                 DiskContent::NoDisk => loading.close(app),
                 _ => message("box.unusable"),
@@ -274,9 +304,55 @@ impl Watcher {
         }
     }
 
+    /// Shows a Windows notification for the events that need the user and
+    /// that the loading box isn't showing. Clicking it does nothing, so the
+    /// text says where to look.
+    fn notify(&self, event: &GameEvent) {
+        let text = match event {
+            GameEvent::Untrusted { drive, .. } => {
+                t("notify.untrusted", &[("drive", &drive.to_string())])
+            }
+            GameEvent::LaunchFailed {
+                drive,
+                error: LaunchError::NotFound,
+                ..
+            } => t("notify.not_found", &[("drive", &drive.to_string())]),
+            GameEvent::LaunchFailed { name, .. } => t("notify.launch_failed", &[("name", name)]),
+            GameEvent::Closed {
+                name,
+                outcome: CloseOutcome::Failed { .. },
+                ..
+            } => t("notify.close_failed", &[("name", name)]),
+            _ => return,
+        };
+        let result = self
+            .inner
+            .app
+            .notification()
+            .builder()
+            .title(t("ui.title", &[]))
+            .body(text)
+            .show();
+        if let Err(error) = result {
+            log::warn!("could not show a notification: {error}");
+        }
+    }
+
+    /// Reads the drive view.
+    pub fn view<R>(&self, f: impl FnOnce(&DriveView) -> R) -> R {
+        f(&lock(&self.inner.view))
+    }
+
+    /// Changes the drive view and sends the new state.
+    pub fn update_view<R>(&self, f: impl FnOnce(&mut DriveView) -> R) -> R {
+        let result = f(&mut lock(&self.inner.view));
+        self.publish_state();
+        result
+    }
+
     /// Numbers the event, keeps it for windows opened later, sends it to the
     /// open ones and updates the window's state and the tray.
-    fn record(&self, mut event: AppEvent) {
+    pub fn record(&self, mut event: AppEvent) {
         {
             let mut log = lock(&self.inner.log);
             log.next_seq += 1;
@@ -346,6 +422,11 @@ pub fn save_settings(watcher: State<'_, Watcher>, settings: Settings) -> Result<
 }
 
 #[tauri::command]
+pub fn finish_welcome(watcher: State<'_, Watcher>) -> Result<(), &'static str> {
+    watcher.finish_welcome()
+}
+
+#[tauri::command]
 pub fn set_detection(watcher: State<'_, Watcher>, enabled: bool) {
     watcher.set_detection(enabled);
 }
@@ -373,9 +454,18 @@ pub fn close_loading_box(app: AppHandle, loading: State<'_, LoadingBox>) {
     loading.close(&app);
 }
 
-/// The loading box's buttons: close it and open the main window.
+/// The loading box's buttons: close it and open the main window on `tab`.
 #[tauri::command]
-pub fn open_main_window(app: AppHandle, loading: State<'_, LoadingBox>) {
+pub fn open_main_window(app: AppHandle, loading: State<'_, LoadingBox>, tab: String) {
     loading.close(&app);
-    windows::open_main(&app);
+    match windows::TABS.iter().find(|known| **known == tab) {
+        Some(tab) => windows::open_main_on(&app, tab),
+        None => windows::open_main(&app),
+    }
+}
+
+/// The tab a newly opened main window should show, once.
+#[tauri::command]
+pub fn take_main_tab(tab: State<'_, MainTab>) -> Option<&'static str> {
+    tab.take()
 }

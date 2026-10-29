@@ -1,5 +1,5 @@
-//! Texts the backend shows itself (the tray menu and tooltip), from the same
-//! language file as the frontend.
+//! Texts the backend shows itself (the tray menu and tooltip, notifications),
+//! from the same language file as the frontend.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -48,6 +48,10 @@ mod tests {
             "box.configure",
             "box.review",
             "box.details",
+            "notify.untrusted",
+            "notify.not_found",
+            "notify.launch_failed",
+            "notify.close_failed",
         ];
         for key in keys {
             assert!(EN.contains_key(key), "en.json has no {key}");

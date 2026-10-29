@@ -4,6 +4,7 @@
 // No console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod disk;
 mod events;
 mod locale;
 mod tray;
@@ -15,7 +16,7 @@ use tauri::{Manager, RunEvent};
 
 use tray::Tray;
 use watcher::Watcher;
-use windows::LoadingBox;
+use windows::{LoadingBox, MainTab};
 
 fn main() {
     // Started by the drive monitor to wait for a disk: see the core's
@@ -30,8 +31,11 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             windows::open_main(app);
         }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             app.manage(LoadingBox::default());
+            app.manage(MainTab::default());
             let watcher = Watcher::start(app.handle().clone())?;
             let tray = Tray::create(app.handle(), &watcher.line(), watcher.detection())?;
             app.manage(tray);
@@ -49,10 +53,21 @@ fn main() {
             watcher::default_settings,
             watcher::save_settings,
             watcher::set_detection,
+            watcher::finish_welcome,
             watcher::removable_drives,
             watcher::loading_box_state,
             watcher::close_loading_box,
             watcher::open_main_window,
+            watcher::take_main_tab,
+            disk::steam_games,
+            disk::open_applications,
+            disk::pick_program,
+            disk::config_preview,
+            disk::write_config,
+            disk::remove_config,
+            disk::approvals,
+            disk::approve_disk,
+            disk::revoke_approval,
         ])
         .build(tauri::generate_context!())
         .expect("error while starting Floppy Station");
