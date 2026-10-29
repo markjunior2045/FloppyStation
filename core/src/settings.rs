@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use windows::Win32::Globalization::GetUserDefaultUILanguage;
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
     FOLDERID_LocalAppData, FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
@@ -59,6 +60,44 @@ pub struct Settings {
     /// couldn't start or close) also becomes a Windows notification. Off by
     /// default.
     pub notifications: bool,
+    /// Language of the app.
+    pub language: Language,
+}
+
+/// The app's language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    /// Windows' display language, if the app has it, else English.
+    #[default]
+    Auto,
+    En,
+    Pt,
+    Es,
+}
+
+impl Language {
+    /// The language to show: `en`, `pt` or `es`, the names of the
+    /// language files.
+    pub fn resolve(self) -> &'static str {
+        match self {
+            Self::Auto => windows_language(),
+            Self::En => "en",
+            Self::Pt => "pt",
+            Self::Es => "es",
+        }
+    }
+}
+
+/// The app's language closest to Windows' display language.
+fn windows_language() -> &'static str {
+    // The low 10 bits of a language ID are the language, whatever the
+    // country (Brazil or Portugal, Spain or Mexico).
+    match unsafe { GetUserDefaultUILanguage() } & 0x3ff {
+        0x16 => "pt",
+        0x0a => "es",
+        _ => "en",
+    }
 }
 
 /// What to do with a game when its disk is removed.
@@ -121,6 +160,7 @@ impl Default for Settings {
             show_loading_box: true,
             quiet_detection: true,
             notifications: false,
+            language: Language::Auto,
         }
     }
 }
@@ -288,6 +328,7 @@ mod tests {
             show_loading_box = false
             quiet_detection = false
             notifications = true
+            language = "pt"
             "#,
         )
         .unwrap();
@@ -306,6 +347,7 @@ mod tests {
         assert!(!settings.show_loading_box);
         assert!(!settings.quiet_detection);
         assert!(settings.notifications);
+        assert_eq!(settings.language, Language::Pt);
     }
 
     #[test]

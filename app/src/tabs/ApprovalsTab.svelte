@@ -3,7 +3,7 @@
   // the disk in the drive when it isn't approved yet.
   import { onMount } from "svelte";
   import { api, type AppState, type TrustEntry } from "../lib/api";
-  import { problemText, t } from "../lib/i18n";
+  import { problemText, t } from "../lib/i18n.svelte";
   import Icon from "../lib/Icon.svelte";
 
   let { app }: { app: AppState } = $props();

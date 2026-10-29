@@ -6,7 +6,7 @@
   import { api, type AppState, type LibraryGame } from "../lib/api";
   import Dialog from "../lib/Dialog.svelte";
   import { fillForm, form, formValues } from "../lib/diskForm.svelte";
-  import { problemText, t } from "../lib/i18n";
+  import { problemText, t } from "../lib/i18n.svelte";
   import Icon from "../lib/Icon.svelte";
   import Marquee from "../lib/Marquee.svelte";
   import ProcessPicker from "../lib/ProcessPicker.svelte";

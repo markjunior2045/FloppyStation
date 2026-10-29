@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::events;
+use crate::locale::t;
 use crate::watcher::Watcher;
 
 /// Tries when another program is using the disk (an Explorer window on it,
@@ -145,7 +146,8 @@ pub async fn open_applications() -> Vec<String> {
 #[tauri::command]
 pub async fn pick_program(app: AppHandle) -> Option<String> {
     blocking(move || {
-        let mut dialog = app.dialog().file().add_filter("Programs", &["exe"]);
+        let filter = t("ui.dialog.programs", &[]);
+        let mut dialog = app.dialog().file().add_filter(filter, &["exe"]);
         if let Some(window) = app.get_webview_window("main") {
             dialog = dialog.set_parent(&window);
         }

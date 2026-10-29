@@ -12,7 +12,9 @@ use crate::windows;
 pub struct Tray {
     icon: TrayIcon,
     state: MenuItem<Wry>,
+    open: MenuItem<Wry>,
     detect: CheckMenuItem<Wry>,
+    exit: MenuItem<Wry>,
 }
 
 impl Tray {
@@ -70,14 +72,21 @@ impl Tray {
         Ok(Self {
             icon,
             state,
+            open,
             detect,
+            exit,
         })
     }
 
+    /// Shows the new state. The fixed items are set again too, in case the
+    /// language changed.
     pub fn update(&self, line: &str, detection: bool) {
         let _ = self.state.set_text(line);
         let _ = self.icon.set_tooltip(Some(tooltip(line)));
         let _ = self.detect.set_checked(detection);
+        let _ = self.open.set_text(t("tray.open", &[]));
+        let _ = self.detect.set_text(t("tray.detect", &[]));
+        let _ = self.exit.set_text(t("tray.exit", &[]));
     }
 }
 

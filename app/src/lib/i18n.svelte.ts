@@ -1,17 +1,30 @@
-// Translates backend codes and UI keys with the language files. Only English
-// for now; each language is a JSON file keyed like en.json.
+// Translates backend codes and UI keys with the language files: one JSON
+// file per language, keyed like en.json. The backend says which language to
+// use; changing it updates every text on screen.
 import en from "../locales/en.json";
+import es from "../locales/es.json";
+import pt from "../locales/pt.json";
 
 export type Params = Record<string, string | number>;
 
-const messages: Record<string, string> = en;
+const LANGUAGES: Record<string, Record<string, string>> = { en, pt, es };
+
+let current = $state("en");
 const warned = new Set<string>();
 
-/** The text for `key`, with `{name}` placeholders filled from `params`. A
- *  missing key shows the key itself, so nothing is lost, and is reported
- *  once in the console. */
+/** Switches the language (`en`, `pt` or `es`; others are ignored). */
+export function setLanguage(language: string) {
+  if (language in LANGUAGES && language !== current) {
+    current = language;
+    document.documentElement.lang = language;
+  }
+}
+
+/** The text for `key` in the current language (English if it has none),
+ *  with `{name}` placeholders filled from `params`. A missing key shows the
+ *  key itself, so nothing is lost, and is reported once in the console. */
 export function t(key: string, params: Params = {}): string {
-  const template = messages[key];
+  const template = LANGUAGES[current][key] ?? en[key as keyof typeof en];
   if (template === undefined) {
     if (!warned.has(key)) {
       warned.add(key);

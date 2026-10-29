@@ -20,7 +20,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::events::{self, AppEvent};
-use crate::locale::t;
+use crate::locale::{self, t};
 use crate::tray::Tray;
 use crate::view::{AppState, DriveView};
 use crate::windows::{self, BoxState, LoadingBox, MainTab};
@@ -76,6 +76,7 @@ impl Watcher {
     pub fn start(app: AppHandle) -> Result<Self, Box<dyn Error>> {
         let first_run = Settings::default_path().is_ok_and(|path| !path.exists());
         let (settings, error) = Settings::load_or_default();
+        locale::set_language(settings.language.resolve());
         let (floppy_tx, floppy_rx) = mpsc::channel();
         let (game_tx, game_rx) = mpsc::channel();
         let watcher = Self {
@@ -173,6 +174,8 @@ impl Watcher {
         *lock(&self.inner.settings) = new.clone();
         *lock(&self.inner.controller_settings) = Some(new.clone());
 
+        // Publishing the state below shows the new language everywhere.
+        locale::set_language(new.language.resolve());
         let detection_changed = new.detection_enabled != old.detection_enabled;
         let drive_changed = new.drive != old.drive;
         self.inner
@@ -213,6 +216,7 @@ impl Watcher {
     pub fn state(&self) -> AppState {
         AppState {
             first_run: self.inner.first_run.load(Ordering::SeqCst),
+            language: locale::language(),
             ..lock(&self.inner.view).state(self.inner.settings_error)
         }
     }
@@ -457,6 +461,12 @@ pub fn open_main_window(app: AppHandle, loading: State<'_, LoadingBox>, tab: Str
         Some(tab) => windows::open_main_on(&app, tab),
         None => windows::open_main(&app),
     }
+}
+
+/// The language in use (`en`, `pt` or `es`), for the windows' texts.
+#[tauri::command]
+pub fn ui_language() -> &'static str {
+    locale::language()
 }
 
 /// The tab a newly opened main window should show, once.

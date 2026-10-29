@@ -3,7 +3,7 @@
   // insert a disk, and a word on how it works.
   import { onMount } from "svelte";
   import { api, type AppState, type Settings, type Tab } from "../lib/api";
-  import { problemText, t } from "../lib/i18n";
+  import { problemText, t } from "../lib/i18n.svelte";
 
   let {
     app,

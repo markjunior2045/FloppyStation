@@ -4,7 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
   import { api, type AppEvent, type AppState, type Settings, type Tab } from "./lib/api";
-  import { t } from "./lib/i18n";
+  import { setLanguage, t } from "./lib/i18n.svelte";
   import TitleBar from "./lib/TitleBar.svelte";
   import ApprovalsTab from "./tabs/ApprovalsTab.svelte";
   import DiskTab from "./tabs/DiskTab.svelte";
@@ -20,6 +20,10 @@
   let events: AppEvent[] = $state([]);
   let version = $state("");
   let panel: HTMLElement | undefined = $state();
+
+  $effect(() => {
+    if (appState) setLanguage(appState.language);
+  });
 
   onMount(() => {
     const unlisten: (() => void)[] = [];

@@ -33,6 +33,8 @@ pub struct AppState {
     pub settings_error: Option<&'static str>,
     /// No settings saved yet: the window shows the welcome.
     pub first_run: bool,
+    /// The language of the texts: `en`, `pt` or `es`.
+    pub language: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -196,6 +198,7 @@ impl DriveView {
             launched: self.launched.clone(),
             settings_error,
             first_run: false,
+            language: "en",
         }
     }
 

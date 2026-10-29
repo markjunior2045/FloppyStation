@@ -67,6 +67,7 @@ fn main() {
             watcher::close_loading_box,
             watcher::open_main_window,
             watcher::take_main_tab,
+            watcher::ui_language,
             disk::steam_games,
             disk::open_applications,
             disk::pick_program,

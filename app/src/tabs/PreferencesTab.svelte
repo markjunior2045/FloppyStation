@@ -2,7 +2,7 @@
   // The preferences. Every change is saved and applied right away.
   import { onMount } from "svelte";
   import { api, type Settings } from "../lib/api";
-  import { t } from "../lib/i18n";
+  import { t } from "../lib/i18n.svelte";
   import Icon from "../lib/Icon.svelte";
 
   let {
@@ -58,12 +58,17 @@
 
   let confirmingReset = $state(false);
 
-  // Keeps the drive (a choice about the hardware, not a preference) and
-  // detection (switched from the tray too).
+  // Keeps the drive (a choice about the hardware, not a preference), the
+  // language and detection (switched from the tray too).
   async function restoreDefaults() {
     confirmingReset = false;
     const defaults = await api.defaultSettings();
-    await save({ ...defaults, drive: settings.drive, detection_enabled: settings.detection_enabled });
+    await save({
+      ...defaults,
+      drive: settings.drive,
+      language: settings.language,
+      detection_enabled: settings.detection_enabled,
+    });
   }
 
   function number(event: Event): number {
@@ -220,6 +225,20 @@
 
     <fieldset>
       <legend>{t("ui.prefs.display")}</legend>
+      <div class="field-row language">
+        <label for="language">{t("ui.prefs.language")}</label>
+        <select
+          id="language"
+          value={settings.language}
+          onchange={(event) => save({ language: event.currentTarget.value as Settings["language"] })}
+        >
+          <option value="auto">{t("ui.prefs.language.auto")}</option>
+          <!-- Each language in its own name. -->
+          <option value="en">English</option>
+          <option value="pt">Português</option>
+          <option value="es">Español</option>
+        </select>
+      </div>
       <div class="field-row">
         <input
           type="checkbox"
@@ -295,6 +314,10 @@
 
   .indent {
     margin-left: 20px;
+  }
+
+  .language {
+    margin-bottom: 6px;
   }
 
   .quiet {

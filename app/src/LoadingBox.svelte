@@ -5,7 +5,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import icon from "./assets/icon.svg";
-  import { t } from "./lib/i18n";
+  import { setLanguage, t } from "./lib/i18n.svelte";
 
   interface BoxState {
     /** Key of the message in the language file; none while reading. */
@@ -29,6 +29,7 @@
   onMount(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
+      setLanguage(await invoke<string>("ui_language"));
       unlisten = await listen<BoxState>("loading-box", (event) => (state = event.payload));
       state = await invoke<BoxState | null>("loading_box_state");
     })();
@@ -44,7 +45,7 @@
     <div class="title-bar-text"><img src={icon} alt="" />{t("ui.title")}</div>
     {#if state?.message}
       <div class="title-bar-controls">
-        <button aria-label="Close" onclick={close}></button>
+        <button aria-label={t("ui.button.close")} onclick={close}></button>
       </div>
     {/if}
   </div>

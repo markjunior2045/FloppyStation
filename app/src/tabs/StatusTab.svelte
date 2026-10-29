@@ -2,7 +2,7 @@
   // What is going on now: the drive, the disk in it and the game.
   import icon from "../assets/icon.svg";
   import { api, type AppEvent, type AppState, type Settings, type Tab } from "../lib/api";
-  import { t } from "../lib/i18n";
+  import { t } from "../lib/i18n.svelte";
   import Icon from "../lib/Icon.svelte";
   import Marquee from "../lib/Marquee.svelte";
   import Welcome from "./Welcome.svelte";

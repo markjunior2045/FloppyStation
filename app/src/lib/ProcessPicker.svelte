@@ -4,7 +4,7 @@
   import { onMount } from "svelte";
   import { api } from "./api";
   import Dialog from "./Dialog.svelte";
-  import { t } from "./i18n";
+  import { t } from "./i18n.svelte";
 
   let { onpick, onclose }: { onpick: (name: string) => void; onclose: () => void } = $props();
 

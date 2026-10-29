@@ -53,6 +53,8 @@ export interface AppState {
   settingsError: string | null;
   /** No settings saved yet: the Status tab shows the welcome. */
   firstRun: boolean;
+  /** The language of the texts: `en`, `pt` or `es`. */
+  language: string;
 }
 
 /** Why a command failed, as a code to translate plus its data. */
@@ -102,6 +104,7 @@ export interface Settings {
   show_loading_box: boolean;
   quiet_detection: boolean;
   notifications: boolean;
+  language: "auto" | "en" | "pt" | "es";
 }
 
 export const api = {

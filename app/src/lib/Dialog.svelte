@@ -1,6 +1,7 @@
 <script lang="ts">
   // A small XP dialog over the main window (the process picker, the preview).
   import type { Snippet } from "svelte";
+  import { t } from "./i18n.svelte";
 
   let {
     title,
@@ -17,7 +18,7 @@
     <div class="title-bar">
       <div class="title-bar-text">{title}</div>
       <div class="title-bar-controls">
-        <button aria-label="Close" onclick={onclose}></button>
+        <button aria-label={t("ui.button.close")} onclick={onclose}></button>
       </div>
     </div>
     <div class="window-body">

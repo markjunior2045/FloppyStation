@@ -3,7 +3,6 @@
 
   "ui.loading": "Loading...",
 
-
   "ui.tab.status": "Status",
   "ui.tab.disk": "Disk",
   "ui.tab.approvals": "Approvals",
@@ -19,6 +18,10 @@
   "ui.button.restore_defaults": "Restore defaults",
   "ui.button.restore": "Restore",
   "ui.button.cancel": "Cancel",
+  "ui.button.minimize": "Minimize",
+  "ui.dialog.programs": "Programs",
+  "ui.prefs.language": "Language:",
+  "ui.prefs.language.auto": "Same as Windows",
 
   "ui.status.drive": "Drive",
   "ui.status.disk": "Disk",
@@ -86,7 +89,7 @@
   "startup_failed": "Floppy Station couldn't change whether it starts with Windows.",
   "log_folder_missing": "The log folder couldn't be opened.",
   "ui.prefs.save_failed": "Couldn't save the preferences: {error}",
-  "ui.prefs.reset_confirm": "Restore all preferences to their defaults? The drive stays the same.",
+  "ui.prefs.reset_confirm": "Restore all preferences to their defaults? The drive and the language stay the same.",
   "ui.button.remove_config": "Remove configuration",
   "ui.button.remove": "Remove",
   "ui.button.browse": "Browse...",
