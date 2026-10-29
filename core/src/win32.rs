@@ -13,6 +13,7 @@ pub(crate) struct OwnedHandle(pub(crate) HANDLE);
 
 // Kernel handles can be used and closed from any thread.
 unsafe impl Send for OwnedHandle {}
+unsafe impl Sync for OwnedHandle {}
 
 impl OwnedHandle {
     pub(crate) fn raw(&self) -> HANDLE {

@@ -12,7 +12,7 @@ use std::time::Instant;
 use floppy_station_core::controller::{Controller, GameEvent, System};
 use floppy_station_core::diskconfig::{self, DiskConfig, DiskContent, DiskInspection, ParseError};
 use floppy_station_core::floppy::{
-    DriveLetter, FloppyEvent, Monitor, Poller, ProbeKind, ProbeResult,
+    DriveLetter, FloppyEvent, HelperWaiter, Monitor, Poller, ProbeKind, ProbeResult,
 };
 use floppy_station_core::kinds::GameTarget;
 use floppy_station_core::launcher::{CloseMode, CloseOutcome};
@@ -40,7 +40,9 @@ usage: floppy-station-cli [options]
 options:
   --drive <letter>       drive to watch, overriding the settings file
   --empty-interval <ms>  time between checks of an empty drive, overriding
-                         the settings file
+                         the settings file (used with --no-quiet)
+  --no-quiet             check an empty drive every interval instead of
+                         waiting quietly for a disk
   --on-removal <action>  close | force | none, overriding the settings file
   --on-disconnect <action>
                          removal | ignore, overriding the settings file
@@ -65,6 +67,7 @@ struct Args {
     on_disconnect: Option<DisconnectAction>,
     probe: ProbeKind,
     diag: bool,
+    no_quiet: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -76,11 +79,13 @@ fn parse_args() -> Result<Args, String> {
         on_disconnect: None,
         probe: ProbeKind::default(),
         diag: false,
+        no_quiet: false,
     };
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--diag" => args.diag = true,
+            "--no-quiet" => args.no_quiet = true,
             "--drive" => {
                 let value = iter.next().ok_or("--drive needs a value")?;
                 args.drive =
@@ -136,6 +141,9 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn main() -> ExitCode {
+    if floppy_station_core::floppy::run_wait_helper() {
+        return ExitCode::SUCCESS;
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = match parse_args() {
@@ -165,6 +173,9 @@ fn main() -> ExitCode {
     if let Some(action) = args.on_disconnect {
         settings.on_drive_disconnect = action;
     }
+    if args.no_quiet {
+        settings.quiet_detection = false;
+    }
     match &args.command {
         Command::Watch => {}
         Command::DiskInspect => return disk_inspect(settings.drive),
@@ -176,10 +187,14 @@ fn main() -> ExitCode {
     }
 
     println!(
-        "Watching drive {} every {} ms, {} ms when empty (probe: {}). Press Ctrl+C to quit.",
+        "Watching drive {} every {} ms, {} when empty (probe: {}). Press Ctrl+C to quit.",
         settings.drive,
         settings.poll_interval_ms,
-        settings.empty_poll_interval_ms,
+        if settings.quiet_detection && !args.diag {
+            "waiting quietly".to_owned()
+        } else {
+            format!("{} ms", settings.empty_poll_interval_ms)
+        },
         args.probe.name()
     );
 
@@ -203,6 +218,13 @@ fn main() -> ExitCode {
         args.probe.create(),
         settings.poll_intervals(),
     );
+    let poller = match HelperWaiter::current_exe() {
+        Ok(waiter) => poller.with_waiter(Box::new(waiter), settings.quiet_detection),
+        Err(error) => {
+            log::warn!("quiet detection unavailable: {error}");
+            poller
+        }
+    };
     let _monitor = match Monitor::spawn(poller, tx) {
         Ok(monitor) => monitor,
         Err(error) => {

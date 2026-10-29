@@ -12,12 +12,21 @@ use windows::Win32::System::Diagnostics::Debug::{
 };
 
 use super::probe::{MediaProbe, ProbeResult};
+use super::wait::{DiskWaiter, PendingWait};
 use super::{DriveLetter, DriveStatus, FloppyEvent, InsertOrigin, RemovalCause};
 
 /// Wait before the second check that confirms a change. Floppy drives report
 /// "not ready" once right after a disk change, and other programs touching
 /// the drive can cause the same, so a single result is never trusted.
 const DEFAULT_CONFIRM_DELAY: Duration = Duration::from_millis(250);
+
+/// How often a pending wait for a disk is looked at. Touches no hardware.
+const WAIT_CHECK: Duration = Duration::from_millis(250);
+
+/// A wait for a disk that ends sooner than this, with the drive still
+/// empty, is not working on this drive: the next one starts only after the
+/// usual interval, so a failing wait doesn't turn into constant checks.
+const MIN_WAIT: Duration = Duration::from_secs(2);
 
 /// How often each drive is checked, depending on its state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +48,6 @@ impl PollIntervals {
     }
 }
 
-#[derive(Debug)]
 struct DriveTracker {
     /// `None` until the drive has been polled once.
     status: Option<DriveStatus>,
@@ -49,6 +57,13 @@ struct DriveTracker {
     last_error: Option<u32>,
     /// When the drive should be checked next.
     next_due: Instant,
+    /// Wait for a disk in progress (quiet detection, empty drive only).
+    wait: Option<Wait>,
+}
+
+struct Wait {
+    pending: Box<dyn PendingWait>,
+    started: Instant,
 }
 
 /// Turns probe results into [`FloppyEvent`]s, keeping the state of every
@@ -58,6 +73,9 @@ pub struct Poller {
     intervals: PollIntervals,
     confirm_delay: Duration,
     drives: BTreeMap<DriveLetter, DriveTracker>,
+    /// Quiet detection: empty drives are waited on instead of polled.
+    waiter: Option<Box<dyn DiskWaiter>>,
+    quiet: bool,
 }
 
 impl Poller {
@@ -85,10 +103,38 @@ impl Poller {
                         change_token: None,
                         last_error: None,
                         next_due: now,
+                        wait: None,
                     };
                     (drive, tracker)
                 })
                 .collect(),
+            waiter: None,
+            quiet: false,
+        }
+    }
+
+    /// Enables quiet detection through `waiter`: an empty drive is waited
+    /// on (see [`DiskWaiter`]) instead of checked at the empty interval.
+    /// `quiet` turns it on or off, like [`Poller::set_quiet`].
+    pub fn with_waiter(mut self, waiter: Box<dyn DiskWaiter>, quiet: bool) -> Self {
+        self.waiter = Some(waiter);
+        self.quiet = quiet;
+        self
+    }
+
+    /// Turns quiet detection on or off, from each drive's next check.
+    /// Without a waiter, empty drives are always polled.
+    pub fn set_quiet(&mut self, quiet: bool) {
+        if quiet == self.quiet {
+            return;
+        }
+        self.quiet = quiet;
+        let now = Instant::now();
+        for tracker in self.drives.values_mut() {
+            tracker.wait = None;
+            if matches!(tracker.status, Some(DriveStatus::Empty)) {
+                tracker.next_due = now;
+            }
         }
     }
 
@@ -129,11 +175,70 @@ impl Poller {
             if !due(tracker) {
                 continue;
             }
+            let mut waiter = match self.waiter.as_mut() {
+                Some(waiter) if self.quiet => Some(waiter),
+                _ => None,
+            };
+            let mut start_failed = false;
+            if let Some(waiter) = waiter.as_mut().filter(|_| tracker.status.is_none())
+                && let Some(pending) = waiter.resume(drive)
+            {
+                // An earlier monitor left a wait running: the drive is empty,
+                // and checking it now would only queue behind that wait.
+                tracker.status = Some(DriveStatus::Empty);
+                events.push(FloppyEvent::DriveConnected { drive });
+                tracker.wait = Some(Wait {
+                    pending,
+                    started: now,
+                });
+                tracker.next_due = now + WAIT_CHECK;
+                continue;
+            }
+            let empty = matches!(tracker.status, Some(DriveStatus::Empty));
+            if let Some(waiter) = waiter.filter(|_| empty) {
+                match &mut tracker.wait {
+                    Some(wait) => {
+                        if !wait.pending.finished() {
+                            tracker.next_due = now + WAIT_CHECK;
+                            continue;
+                        }
+                        // Finished: check the drive below.
+                    }
+                    None => match waiter.start(drive) {
+                        Ok(pending) => {
+                            tracker.wait = Some(Wait {
+                                pending,
+                                started: now,
+                            });
+                            tracker.next_due = now + WAIT_CHECK;
+                            continue;
+                        }
+                        Err(error) => {
+                            log::warn!("could not wait for a disk in drive {drive}: {error}");
+                            start_failed = true;
+                        }
+                    },
+                }
+            }
+
+            let finished = tracker.wait.take();
             let result = probe_confirmed(self.probe.as_mut(), drive, tracker, self.confirm_delay);
             if let Some(result) = result {
                 update(drive, tracker, result, &mut events);
             }
-            tracker.next_due = now + self.intervals.for_status(tracker.status.as_ref());
+            let still_empty = matches!(tracker.status, Some(DriveStatus::Empty));
+            let too_short =
+                finished.is_some_and(|wait| now.saturating_duration_since(wait.started) < MIN_WAIT);
+            tracker.next_due = if self.quiet && self.waiter.is_some() && still_empty {
+                // Wait again right away, unless waiting doesn't work here.
+                if start_failed || too_short {
+                    now + self.intervals.empty
+                } else {
+                    now
+                }
+            } else {
+                now + self.intervals.for_status(tracker.status.as_ref())
+            };
         }
         events
     }
@@ -296,6 +401,7 @@ pub struct Monitor {
 
 enum Command {
     SetIntervals(PollIntervals),
+    SetQuiet(bool),
 }
 
 impl Monitor {
@@ -323,6 +429,7 @@ impl Monitor {
                     match commands_rx.recv_timeout(wait) {
                         Err(RecvTimeoutError::Timeout) => {}
                         Ok(Command::SetIntervals(intervals)) => poller.set_intervals(intervals),
+                        Ok(Command::SetQuiet(quiet)) => poller.set_quiet(quiet),
                         Err(RecvTimeoutError::Disconnected) => return,
                     }
                 }
@@ -336,6 +443,11 @@ impl Monitor {
     /// the drives (and the games launched from them) is kept.
     pub fn set_intervals(&self, intervals: PollIntervals) {
         let _ = self.commands.send(Command::SetIntervals(intervals));
+    }
+
+    /// Turns quiet detection on or off without restarting.
+    pub fn set_quiet(&self, quiet: bool) {
+        let _ = self.commands.send(Command::SetQuiet(quiet));
     }
 }
 
@@ -598,6 +710,173 @@ mod tests {
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), CONNECTED);
         drop(monitor); // must return promptly despite the 60 s interval
         assert!(rx.recv().is_err());
+    }
+
+    /// Waiter controlled by the test through shared state.
+    #[derive(Clone, Default)]
+    struct FakeWaiter(std::sync::Arc<std::sync::Mutex<WaitState>>);
+
+    #[derive(Default)]
+    struct WaitState {
+        starts: usize,
+        alive: usize,
+        finished: bool,
+        fail: bool,
+        /// A wait left running by an earlier poller.
+        resumable: bool,
+    }
+
+    struct FakeWait(FakeWaiter);
+
+    impl FakeWaiter {
+        fn state(&self) -> std::sync::MutexGuard<'_, WaitState> {
+            self.0.lock().unwrap()
+        }
+    }
+
+    impl DiskWaiter for FakeWaiter {
+        fn start(&mut self, _drive: DriveLetter) -> io::Result<Box<dyn PendingWait>> {
+            let mut state = self.state();
+            if state.fail {
+                return Err(io::Error::other("no helper"));
+            }
+            state.starts += 1;
+            state.alive += 1;
+            state.finished = false;
+            Ok(Box::new(FakeWait(self.clone())))
+        }
+
+        fn resume(&mut self, _drive: DriveLetter) -> Option<Box<dyn PendingWait>> {
+            let mut state = self.state();
+            if !std::mem::take(&mut state.resumable) {
+                return None;
+            }
+            state.alive += 1;
+            Some(Box::new(FakeWait(self.clone())))
+        }
+    }
+
+    impl PendingWait for FakeWait {
+        fn finished(&mut self) -> bool {
+            self.0.state().finished
+        }
+    }
+
+    impl Drop for FakeWait {
+        fn drop(&mut self) {
+            self.0.state().alive -= 1;
+        }
+    }
+
+    fn quiet_poller(script: &[ProbeResult]) -> (Poller, FakeWaiter) {
+        let waiter = FakeWaiter::default();
+        let poller = poller(script).with_waiter(Box::new(waiter.clone()), true);
+        (poller, waiter)
+    }
+
+    #[test]
+    fn quiet_detection_waits_instead_of_polling() {
+        // Any check while waiting would see the disk and report it early.
+        let (mut poller, waiter) = quiet_poller(&[EMPTY, EMPTY, disk(1)]);
+        assert_eq!(poller.poll(), [CONNECTED]);
+        assert_eq!(poller.poll(), []);
+        assert_eq!(poller.poll(), []);
+        assert_eq!(waiter.state().starts, 1);
+
+        waiter.state().finished = true;
+        assert_eq!(poller.poll(), [inserted(InsertOrigin::Inserted)]);
+        assert_eq!(waiter.state().alive, 0);
+    }
+
+    #[test]
+    fn quiet_detection_waits_again_after_removal() {
+        let (mut poller, waiter) = quiet_poller(&[EMPTY, EMPTY, disk(1), disk(1), EMPTY]);
+        poller.poll();
+        poller.poll();
+        waiter.state().finished = true;
+        assert_eq!(poller.poll(), [inserted(InsertOrigin::Inserted)]);
+        assert_eq!(poller.poll(), [removed(RemovalCause::Ejected)]);
+        assert_eq!(poller.poll(), []);
+        assert_eq!(waiter.state().starts, 2);
+        assert_eq!(waiter.state().alive, 1);
+    }
+
+    #[test]
+    fn quiet_detection_waits_again_when_windows_gives_up() {
+        let (mut poller, waiter) = quiet_poller(&[EMPTY]);
+        let start = Instant::now();
+        poller.poll_due(start);
+        poller.poll_due(start);
+        waiter.state().finished = true;
+        // A long wait that ended without a disk: wait again at once.
+        let later = start + Duration::from_secs(200);
+        assert_eq!(poller.poll_due(later), []);
+        assert_eq!(poller.next_due(), Some(later));
+        poller.poll_due(later);
+        assert_eq!(waiter.state().starts, 2);
+    }
+
+    #[test]
+    fn wait_ending_at_once_falls_back_to_the_empty_interval() {
+        let (mut poller, waiter) = quiet_poller(&[EMPTY]);
+        let start = Instant::now();
+        poller.poll_due(start);
+        poller.poll_due(start);
+        waiter.state().finished = true;
+        let check = start + WAIT_CHECK;
+        poller.poll_due(check);
+        assert_eq!(poller.next_due(), Some(check + INTERVALS.empty));
+    }
+
+    #[test]
+    fn failing_waiter_falls_back_to_polling() {
+        let (mut poller, waiter) = quiet_poller(&[EMPTY, EMPTY, EMPTY, disk(1)]);
+        waiter.state().fail = true;
+        let start = Instant::now();
+        poller.poll_due(start);
+        assert_eq!(poller.poll_due(start), []);
+        assert_eq!(poller.next_due(), Some(start + INTERVALS.empty));
+        assert_eq!(
+            poller.poll_due(start + INTERVALS.empty),
+            [inserted(InsertOrigin::Inserted)]
+        );
+    }
+
+    #[test]
+    fn turning_quiet_detection_off_abandons_the_wait() {
+        let (mut poller, waiter) = quiet_poller(&[EMPTY, EMPTY, disk(1)]);
+        poller.poll();
+        poller.poll();
+        assert_eq!(waiter.state().alive, 1);
+        poller.set_quiet(false);
+        assert_eq!(waiter.state().alive, 0);
+        assert_eq!(poller.poll(), [inserted(InsertOrigin::Inserted)]);
+
+        poller.set_quiet(true);
+        assert_eq!(waiter.state().starts, 1, "a disk is in: no wait");
+    }
+
+    #[test]
+    fn takes_over_a_wait_left_by_an_earlier_monitor() {
+        // Checking the drive would report the disk as already in it, so a
+        // check here would show the wait wasn't trusted.
+        let (mut poller, waiter) = quiet_poller(&[disk(1)]);
+        waiter.state().resumable = true;
+        assert_eq!(poller.poll(), [CONNECTED]);
+        assert_eq!(poller.poll(), []);
+        assert_eq!(waiter.state().starts, 0);
+
+        waiter.state().finished = true;
+        assert_eq!(poller.poll(), [inserted(InsertOrigin::Inserted)]);
+    }
+
+    #[test]
+    fn no_wait_with_a_disk_in_or_the_drive_missing() {
+        let (mut poller, waiter) = quiet_poller(&[disk(1), disk(1), MISSING, MISSING]);
+        for _ in 0..4 {
+            poller.poll();
+        }
+        assert_eq!(waiter.state().starts, 0);
     }
 
     /// Probe whose checks take a long time, like a just-plugged drive.

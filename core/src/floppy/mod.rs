@@ -6,6 +6,7 @@
 
 mod monitor;
 mod probe;
+mod wait;
 
 use std::fmt;
 
@@ -16,6 +17,7 @@ mod drives;
 pub use drives::removable_drives;
 pub use monitor::{Monitor, PollIntervals, Poller, suppress_error_dialogs};
 pub use probe::{IoctlProbe, MediaProbe, ProbeKind, ProbeResult, VolumeProbe};
+pub use wait::{DiskWaiter, HelperWaiter, PendingWait, WAIT_ARG, run_wait_helper};
 
 /// A drive letter, always stored in uppercase (`'A'`..=`'Z'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

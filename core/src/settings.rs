@@ -50,6 +50,9 @@ pub struct Settings {
     pub detection_enabled: bool,
     /// Whether the app shows a small box while it reads a disk.
     pub show_loading_box: bool,
+    /// Quiet detection: an empty drive is waited on (one click every ~20 s,
+    /// light on) instead of checked every `empty_poll_interval_ms`.
+    pub quiet_detection: bool,
 }
 
 /// What to do with a game when its disk is removed.
@@ -110,6 +113,7 @@ impl Default for Settings {
             on_drive_disconnect: DisconnectAction::default(),
             detection_enabled: true,
             show_loading_box: true,
+            quiet_detection: true,
         }
     }
 }
@@ -270,6 +274,7 @@ mod tests {
             on_drive_disconnect = "ignore"
             detection_enabled = false
             show_loading_box = false
+            quiet_detection = false
             "#,
         )
         .unwrap();
@@ -286,6 +291,7 @@ mod tests {
         assert_eq!(settings.on_drive_disconnect, DisconnectAction::Ignore);
         assert!(!settings.detection_enabled);
         assert!(!settings.show_loading_box);
+        assert!(!settings.quiet_detection);
     }
 
     #[test]
