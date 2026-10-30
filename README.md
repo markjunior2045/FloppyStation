@@ -102,6 +102,11 @@ The tray icon's menu shows what's going on, opens the window, turns disk
 detection on and off, and exits. Closing the window keeps Floppy Station
 running in the tray; only **Exit** stops it. Games stay open when it exits.
 
+### Languages
+
+Floppy Station speaks English, Portuguese and Spanish. It follows the Windows
+display language by default; pick another one in **Preferences**.
+
 ## The disk file
 
 Floppy Station writes `floppy-station.toml` at the root of the disk, next to
