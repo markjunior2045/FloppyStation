@@ -107,6 +107,9 @@ running in the tray; only **Exit** stops it. Games stay open when it exits.
 Floppy Station speaks English, Portuguese and Spanish. It follows the Windows
 display language by default; pick another one in **Preferences**.
 
+> The Portuguese and Spanish texts were translated automatically and may
+> contain mistakes. Corrections are welcome in an issue or pull request.
+
 ## The disk file
 
 Floppy Station writes `floppy-station.toml` at the root of the disk, next to
