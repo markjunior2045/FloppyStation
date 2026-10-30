@@ -15,7 +15,7 @@
     <img src={icon} alt="" />{title}
   </div>
   <div class="title-bar-controls">
-    <button aria-label={t("ui.button.minimize")} onclick={() => appWindow.minimize()}></button>
-    <button aria-label={t("ui.button.close")} onclick={() => appWindow.close()}></button>
+    <button data-control="Minimize" aria-label={t("ui.button.minimize")} onclick={() => appWindow.minimize()}></button>
+    <button data-control="Close" aria-label={t("ui.button.close")} onclick={() => appWindow.close()}></button>
   </div>
 </div>

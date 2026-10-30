@@ -45,7 +45,7 @@
     <div class="title-bar-text"><img src={icon} alt="" />{t("ui.title")}</div>
     {#if state?.message}
       <div class="title-bar-controls">
-        <button aria-label={t("ui.button.close")} onclick={close}></button>
+        <button data-control="Close" aria-label={t("ui.button.close")} onclick={close}></button>
       </div>
     {/if}
   </div>

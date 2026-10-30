@@ -18,7 +18,7 @@
     <div class="title-bar">
       <div class="title-bar-text">{title}</div>
       <div class="title-bar-controls">
-        <button aria-label={t("ui.button.close")} onclick={onclose}></button>
+        <button data-control="Close" aria-label={t("ui.button.close")} onclick={onclose}></button>
       </div>
     </div>
     <div class="window-body">
